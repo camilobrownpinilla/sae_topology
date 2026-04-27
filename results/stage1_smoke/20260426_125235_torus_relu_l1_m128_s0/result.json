@@ -1,0 +1,41 @@
+{
+  "topology": "torus",
+  "arch": "relu_l1",
+  "d_sae": 128,
+  "seed": 0,
+  "timestamp": "20260426_125235",
+  "headline_betti_laplacian": [
+    1,
+    2
+  ],
+  "headline_betti_gt": [
+    1,
+    2
+  ],
+  "headline_betti_pca": [
+    1,
+    2
+  ],
+  "headline_log_ratio_error": 0.1441957950964998,
+  "final_mse": 0.000517059990670532,
+  "final_mean_l0": 20.3125,
+  "config": {
+    "arch": "relu_l1",
+    "d_in": 64,
+    "d_sae": 128,
+    "l1_coeff": 0.001,
+    "k": 9,
+    "K_sweep": null,
+    "l0_coeff": 0.001,
+    "jumprelu_bandwidth": 0.05,
+    "jumprelu_init_threshold": 0.01,
+    "lr": 0.0004,
+    "n_steps": 3000,
+    "batch_size": 256,
+    "seed": 0,
+    "resample_every": 2500,
+    "dead_threshold": 0.001,
+    "pca_dim": 4,
+    "n_eval_samples": 2000
+  }
+}

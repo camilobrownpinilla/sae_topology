@@ -1,0 +1,30 @@
+# Stage 3: Cross-topology architecture comparison
+# Verifies relu_l1 (T1-dominant) vs topk (T2-permissive) bias holds for
+# circle, two_circles, and figure_eight (torus excluded).
+dgp:
+  d: 8
+  sigma: 0.05
+
+sweep:
+  topologies: [circle, two_circles, figure_eight]
+  archs: [relu_l1, topk]
+  width: 64
+  n_seeds: 3
+  relu_l1_sae:
+    l1_coeff: 2.0e-2   # calibrated: L0≈9, score=1.0 on circle
+    lr: 4.0e-4
+    n_steps: 30000
+    batch_size: 256
+    resample_every: 2500
+    dead_threshold: 1.0e-3
+    pca_dim: 4
+    n_eval_samples: 2000
+  topk_sae:
+    k: 9               # matched to relu_l1 L0≈9 for fair comparison
+    lr: 4.0e-4
+    n_steps: 30000
+    batch_size: 256
+    resample_every: 2500
+    dead_threshold: 1.0e-3
+    pca_dim: 4
+    n_eval_samples: 2000

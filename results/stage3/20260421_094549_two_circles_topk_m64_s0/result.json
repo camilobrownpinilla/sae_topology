@@ -1,0 +1,31 @@
+{
+  "topology": "two_circles",
+  "arch": "topk",
+  "d_sae": 64,
+  "seed": 0,
+  "timestamp": "20260421_094549",
+  "score": 0.7230727264317294,
+  "rho_t1": 1.0435493490101708,
+  "rho_t2": 0.3996655737265118,
+  "n_live_atoms": 44,
+  "final_mse": 0.003453359939157963,
+  "final_mean_l0": 9.0,
+  "config": {
+    "arch": "topk",
+    "d_in": 8,
+    "d_sae": 64,
+    "l1_coeff": 0.02,
+    "k": 9,
+    "l0_coeff": 0.001,
+    "jumprelu_bandwidth": 0.05,
+    "jumprelu_init_threshold": 0.01,
+    "lr": 0.0004,
+    "n_steps": 30000,
+    "batch_size": 256,
+    "seed": 0,
+    "resample_every": 2500,
+    "dead_threshold": 0.001,
+    "pca_dim": 4,
+    "n_eval_samples": 2000
+  }
+}

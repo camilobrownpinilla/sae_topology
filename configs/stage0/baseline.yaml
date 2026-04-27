@@ -1,0 +1,64 @@
+circle:
+  n_samples: 1000
+  ambient_d: 64
+  sigma_noise: 0.01
+  knn_k: 25
+  sigma_factor: 2.0
+  sigma_used: 0.23945552967714998
+  correct_region_fraction: 0.65
+  correct_region_size: 13
+  spectral_log_ratio_error: 0.02736961704496122
+  mapper_laplacian_modal_betti:
+  - 1
+  - 1
+  spectral_pass: true
+  mapper_pass: true
+  overall_pass: true
+torus:
+  n_samples: 5000
+  ambient_d: 64
+  sigma_noise: 0.01
+  knn_k: 40
+  sigma_factor: 0.5
+  sigma_used: 0.12490820242326706
+  correct_region_fraction: 0.15
+  correct_region_size: 3
+  spectral_log_ratio_error: 0.01325167426907185
+  mapper_laplacian_modal_betti:
+  - 1
+  - 2
+  spectral_pass: true
+  mapper_pass: false
+  overall_pass: false
+sphere:
+  n_samples: 5000
+  ambient_d: 64
+  sigma_noise: 0.01
+  knn_k: 40
+  sigma_factor: 1.0
+  sigma_used: 0.168451767304712
+  correct_region_fraction: 0.2
+  correct_region_size: 4
+  spectral_log_ratio_error: 0.03491904557507701
+  mapper_laplacian_modal_betti:
+  - 1
+  - 0
+  spectral_pass: true
+  mapper_pass: false
+  overall_pass: false
+figure_eight:
+  n_samples: 1000
+  ambient_d: 64
+  sigma_noise: 0.01
+  knn_k: 15
+  sigma_factor: 1.0
+  sigma_used: 0.12226406184072307
+  correct_region_fraction: 0.55
+  correct_region_size: 11
+  spectral_log_ratio_error: null
+  mapper_laplacian_modal_betti:
+  - 1
+  - 2
+  spectral_pass: true
+  mapper_pass: true
+  overall_pass: true

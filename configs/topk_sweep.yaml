@@ -1,0 +1,28 @@
+# H1 phase-transition sweep: TopK k in {1, 2, 3, 4, 6, 8} on each smooth manifold.
+# Spec section 6: recovery requires k >= d + 1 for a d-manifold.
+#   S^1 (d=1) -> phase transition at k=2.
+#   T^2, S^2 (d=2) -> phase transition at k=3.
+dgp:
+  d: 64
+  sigma: 0.01
+
+sweep:
+  topologies: [circle, torus, sphere]
+  K_values: [1, 2, 3, 4, 6, 8]
+  width: 64
+  n_seeds: 3
+  topk_sae:
+    lr: 4.0e-4
+    n_steps: 30000
+    batch_size: 256
+    resample_every: 2500
+    dead_threshold: 1.0e-3
+    n_eval_samples: 2000
+
+# Per-topology DGP overrides (canonical unit forms).
+dgp_overrides:
+  torus:
+    major_radius: 1.0
+    minor_radius: 1.0
+  sphere:
+    radius: 1.0

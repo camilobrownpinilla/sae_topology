@@ -1,0 +1,22 @@
+# Stage 1 smoke test: ReLU+L1 on S^1, m=64, ambient D=64.
+# After Stage 0 validation passes on raw S^1 samples, this trains an SAE on
+# the same setup and verifies the Mapper + spectral pipeline still recovers
+# (1, 1) Betti and low log-ratio error on the SAE post-activations.
+topology: circle
+
+dgp:
+  d: 64
+  sigma: 0.01
+
+sae:
+  arch: relu_l1
+  d_sae: 64
+  l1_coeff: 1.0e-3      # tuned for D=64; old default 2e-2 was for D=8
+  lr: 4.0e-4
+  n_steps: 30000
+  batch_size: 256
+  seed: 0
+  resample_every: 2500
+  dead_threshold: 1.0e-3
+  n_eval_samples: 2000
+  pca_dim: 4            # unused by new pipeline; kept for config schema compat
