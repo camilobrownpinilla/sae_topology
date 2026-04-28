@@ -125,9 +125,20 @@ def build_coifman_lafon(
 
 
 def _deterministic_v0(N: int) -> np.ndarray:
-    """Constant starting vector for ARPACK so that eigsh is reproducible
-    across processes (loky workers don't share numpy RNG state)."""
-    return np.full(N, 1.0 / np.sqrt(N), dtype=float)
+    """Deterministic starting vector for ARPACK so that eigsh is reproducible
+    across processes (loky workers don't share numpy RNG state).
+
+    Must NOT be the constant vector: every graph Laplacian satisfies L · 1 = 0,
+    so a constant v0 lies exactly in the kernel and ARPACK aborts with error
+    -9 ('Starting vector is zero') after the first orthogonalisation. We use
+    a fixed-seed RNG draw — generic enough to have nonzero projection onto
+    every eigenvector with probability 1, while still bit-identical across
+    runs and processes.
+    """
+    rng = np.random.default_rng(0)
+    v0 = rng.standard_normal(N)
+    v0 /= np.linalg.norm(v0)
+    return v0
 
 
 def laplacian_eigendecomposition(
@@ -152,7 +163,10 @@ def laplacian_eigendecomposition(
     Laplacians (which have a 0 eigenvalue that confuses ARPACK's
     smallest-magnitude search). The explicit `v0` makes eigsh deterministic
     across processes (otherwise ARPACK uses the local numpy RNG, which
-    differs across loky workers even with the same seed).
+    differs across loky workers even with the same seed). v0 is drawn from
+    a fixed-seed RNG rather than the constant vector, since the constant
+    vector is in the kernel of every graph Laplacian and trips ARPACK
+    error -9 ('Starting vector is zero').
     """
     N = L.shape[0]
     K = min(K, N - 1)

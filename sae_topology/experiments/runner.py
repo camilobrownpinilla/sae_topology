@@ -195,6 +195,7 @@ def run_sae_experiment(
     spectral_K: int = SPECTRAL_K,
     skip_training: bool = False,
     baseline_path: Path | str | None = None,
+    n_jobs: int = 1,
 ) -> ExperimentResult:
     """Train an SAE on synthetic DGP data, then run Mapper + spectral analysis
     on its post-activations.
@@ -209,6 +210,10 @@ def run_sae_experiment(
     knn_k_grid   : kNN values to sweep for spectral analysis.
     spectral_K   : number of eigenvalues to compute per kNN value.
     skip_training: if True, skip training (random-init negative control).
+    n_jobs       : worker count for the Mapper-filter pool (Laplacian / GT /
+                   PCA dispatched in parallel via joblib loky). 1 = serial.
+                   Each worker pins BLAS to 1 thread for determinism and calls
+                   mapper_sweep with n_jobs=1 (no nested loky pools).
     """
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
@@ -252,6 +257,7 @@ def run_sae_experiment(
     mapper_results = _run_mapper_all_filters(
         post, eval_gt, topology,
         knn_k=knn_k_baseline, sigma_factor=sigma_factor_baseline,
+        n_jobs=n_jobs,
     )
     spectral_results = _run_spectral_sweep(
         post, topology, knn_k_grid=knn_k_grid, K=spectral_K,
@@ -279,36 +285,81 @@ def run_sae_experiment(
     return result
 
 
+def _run_one_filter(
+    filter_kind: str, Z: np.ndarray, gt: Optional[np.ndarray],
+    topology: str, k: int, expected: Optional[tuple],
+    eigenvectors: Optional[np.ndarray],
+) -> tuple[str, dict]:
+    """Worker: run one filter's Mapper sweep and summarize. Pinned to a
+    single BLAS thread so parallel and serial paths produce identical
+    numerical results.
+    """
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=1):
+        if filter_kind == 'laplacian':
+            if eigenvectors is None:
+                raise ValueError(
+                    "filter_kind='laplacian' requires precomputed eigenvectors."
+                )
+            lens = laplacian_eigenvector_filter(Z, k=k, eigenvectors=eigenvectors)
+        elif filter_kind == 'ground_truth':
+            if gt is None:
+                raise ValueError("filter_kind='ground_truth' requires `gt`.")
+            lens = ground_truth_filter(gt)
+        elif filter_kind == 'pca':
+            lens = pca_filter(Z, k=k)
+        else:
+            raise ValueError(f"unknown filter_kind {filter_kind!r}")
+
+        sweep = mapper_sweep(
+            Z, lens, topology=topology, n_jobs=1,  # never nest loky pools
+        )
+        summary = _summarise_sweep(sweep, k=lens.shape[1], expected_betti=expected)
+    return filter_kind, summary
+
+
 def _run_mapper_all_filters(
     Z: np.ndarray, gt: Optional[np.ndarray], topology: str,
     knn_k: int = DEFAULT_KNN_K,
     sigma_factor: float = DEFAULT_SIGMA_FACTOR,
+    n_jobs: int = 1,
 ) -> dict:
-    """Run Mapper under all available filters; return per-filter results."""
+    """Run Mapper under all available filters; return per-filter results.
+
+    With n_jobs > 1 the per-filter sweeps are dispatched in parallel via
+    joblib loky. The Coifman-Lafon spectrum (needed only for the Laplacian
+    filter) is computed once in the main process and the eigenvectors are
+    shipped to the Lap worker through pickle (small: N x (k+1) x 8 bytes).
+    """
     k = FILTER_K_BY_TOPOLOGY.get(topology, 3)
     expected = EXPECTED_BETTI.get(topology)
-    results: dict = {}
 
     spec = coifman_lafon_spectrum(
         Z, knn_k=knn_k, K=k + 1, sigma_factor=sigma_factor,
     )
-    lap_filter = laplacian_eigenvector_filter(
-        Z, k=k, eigenvectors=spec['eigenvectors']
-    )
-    sweep_lap = mapper_sweep(Z, lap_filter, topology=topology)
-    results['laplacian'] = _summarise_sweep(sweep_lap, k=k, expected_betti=expected)
+    eigenvectors = spec['eigenvectors']
 
+    # Build the per-filter job list in the canonical (laplacian, gt, pca)
+    # order so the returned dict has the same insertion order whether
+    # dispatched serially or in parallel.
+    jobs: list[tuple] = [
+        ('laplacian', Z, gt, topology, k, expected, eigenvectors),
+    ]
     if gt is not None and topology in GROUND_TRUTH_FILTER_OK:
-        gt_filter = ground_truth_filter(gt)
-        sweep_gt = mapper_sweep(Z, gt_filter, topology=topology)
-        results['ground_truth'] = _summarise_sweep(
-            sweep_gt, k=gt_filter.shape[1], expected_betti=expected,
+        jobs.append(('ground_truth', Z, gt, topology, k, expected, None))
+    jobs.append(('pca', Z, gt, topology, k, expected, None))
+
+    if n_jobs == 1 or len(jobs) <= 1:
+        outputs = [_run_one_filter(*job) for job in jobs]
+    else:
+        from joblib import Parallel, delayed
+        outputs = Parallel(n_jobs=n_jobs, backend='loky')(
+            delayed(_run_one_filter)(*job) for job in jobs
         )
 
-    pca_lens = pca_filter(Z, k=k)
-    sweep_pca = mapper_sweep(Z, pca_lens, topology=topology)
-    results['pca'] = _summarise_sweep(sweep_pca, k=k, expected_betti=expected)
-    return results
+    # Re-key into a dict; iteration order matches the jobs list, which
+    # matches the original sequential-loop order.
+    return {filter_kind: payload for (filter_kind, payload) in outputs}
 
 
 def _summarise_sweep(sweep: dict, k: Optional[int] = None,
@@ -442,6 +493,9 @@ def main():
     parser.add_argument('--config', required=True, help='YAML config path')
     parser.add_argument('--save_dir', default='results/stage1',
                         help='Directory to save results to')
+    parser.add_argument('--n_jobs', type=int, default=1,
+                        help='Worker count for the per-filter Mapper joblib pool. '
+                             '1 = serial. Each worker pins BLAS to 1 thread.')
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -453,7 +507,9 @@ def main():
         d_in=dgp_params.get('d', 64),
         **{k: v for k, v in sae_dict.items() if k != 'd_in'},
     )
-    res = run_sae_experiment(topology, config, dgp_params, save_dir=args.save_dir)
+    res = run_sae_experiment(
+        topology, config, dgp_params, save_dir=args.save_dir, n_jobs=args.n_jobs,
+    )
     print(f"\n=== {topology} / {config.arch} m={config.d_sae} ===")
     lap = res.mapper.get('laplacian', {}).get('_summary', {})
     err = res.spectral.get(res.spectral.get('_best_knn_k'), {}).get('log_ratio_error')

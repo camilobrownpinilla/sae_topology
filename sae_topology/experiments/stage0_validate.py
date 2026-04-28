@@ -11,7 +11,24 @@ Betti exactly matches the manifold's known ground truth - see
 (knn_k, sigma_factor) that maximises this fraction, tie-breaking on the
 spectral log-ratio error.
 
+Parallelism (`--n_jobs`, default 1):
+  Two flat job pools dispatched via joblib (loky backend, BLAS pinned to
+  1 thread per worker for determinism):
+
+    Stage A:  one job per (topology, knn_k); within each job the 3
+              sigma_factor variants run serially and share the kNN graph
+              (kNN is the cost-dominant part for large N).
+              4 topologies x 3 knn_k = 12 jobs.
+    Stage B:  one job per (topology, filter_kind); each job runs the full
+              (n_intervals x overlap) Mapper sweep on the chosen filter at
+              the winning (knn_k, sigma_factor).
+              4 topologies x 3 filters - (figure_eight has no GT filter) = 11 jobs.
+
+  Workers MUST call mapper_sweep with n_jobs=1 (no nested loky pools).
+  Determinism: parallel and serial paths produce bit-identical baseline.yaml.
+
 Run:  python -m sae_topology.experiments.stage0_validate
+      python -m sae_topology.experiments.stage0_validate --n_jobs 12
       python -m sae_topology.experiments.stage0_validate --quick   (N/2 for dev)
 
 Writes:  configs/stage0/baseline.yaml
@@ -21,7 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -41,11 +58,9 @@ from sae_topology.mapper import (
 )
 from sae_topology.spectral import (
     coifman_lafon_spectrum,
+    compute_knn,
     log_ratio_error,
-    multiplicity_check,
-    near_zero_count,
     REFERENCE_SPECTRA,
-    GROUND_TRUTH_BETTI,
 )
 
 
@@ -76,6 +91,12 @@ EXPECTED_BETTI = {
     'figure_eight': (1, 2),
 }
 
+# Filters supported per topology (figure_eight has no closed-form GT).
+GT_FILTER_TOPOLOGIES = {'circle', 'torus', 'sphere'}
+
+# Inner-loop reduced grid (used for cheap scoring during auto-tune).
+INNER_NI_GRID = (5, 8, 12)
+
 
 def _dgp_kwargs(topology: str) -> dict:
     if topology == 'torus':
@@ -83,6 +104,19 @@ def _dgp_kwargs(topology: str) -> dict:
     if topology == 'sphere':
         return {'radius': 1.0}
     return {}
+
+
+def _sample_X_gt(
+    topology: str, n_samples: int, ambient_d: int,
+    sigma_noise: float, seed: int,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Deterministic sample. Identical across processes for fixed seed."""
+    np.random.seed(seed)
+    dgp = make_dgp(
+        topology, d=ambient_d, sigma=sigma_noise,
+        c0=np.zeros(ambient_d), **_dgp_kwargs(topology),
+    )
+    return dgp.sample_with_gt(n_samples)
 
 
 @dataclass
@@ -111,21 +145,17 @@ class Stage0Result:
     tuning_log: list  # one entry per (knn_k, sigma_factor) tried
 
 
-def _score_config(
-    X: np.ndarray, topology: str,
-    knn_k: int, sigma_factor: float,
-    n_intervals_grid, overlap_grid, spectral_K: int,
-) -> dict:
-    """Cheap scoring pass for the auto-tune inner loop. Computes ONLY:
-      - spectral log-ratio error
-      - Mapper-Laplacian correct-region fraction at a *reduced* (ni, ov) grid
+# ---------------------------------------------------------------------------
+# Inner-loop scoring (Stage A)
+# ---------------------------------------------------------------------------
 
-    Skips GT and PCA filter sweeps; those run once at the winning
-    (knn_k, sigma_factor) inside `_full_diagnostics`.
+def _score_inner(
+    X: np.ndarray, topology: str, knn_k: int, sigma_factor: float,
+    spec: dict, inner_n_intervals_grid, overlap_grid,
+) -> dict:
+    """Cheap per-(knn_k, sigma_factor) score: spectral E + Laplacian-filter
+    correct-region on the reduced (n_intervals, overlap) grid.
     """
-    spec = coifman_lafon_spectrum(
-        X, knn_k=knn_k, K=spectral_K, sigma_factor=sigma_factor,
-    )
     eigs = spec['eigenvalues']
     has_ref = topology in REFERENCE_SPECTRA
     log_err = None
@@ -142,7 +172,8 @@ def _score_config(
     )
     sweep_lap = mapper_sweep(
         X, lap_filter, topology=topology,
-        n_intervals_grid=n_intervals_grid, overlap_grid=overlap_grid,
+        n_intervals_grid=inner_n_intervals_grid, overlap_grid=overlap_grid,
+        n_jobs=1,  # never spawn nested loky pools from a worker
     )
     cr_lap = correct_region(sweep_lap, expected) if expected else {
         'region_size': 0, 'region_fraction': 0.0,
@@ -158,57 +189,185 @@ def _score_config(
         'spectral_eigenvalues': [float(v) for v in eigs],
         'mapper_laplacian_correct_region': cr_lap,
         'mapper_laplacian_modal_betti': (int(modal_lap[0]), int(modal_lap[1])),
-        'eigenvectors': spec['eigenvectors'],  # passed through for full-grid reuse
+        'eigenvectors': spec['eigenvectors'],
     }
 
 
-def _full_diagnostics(
-    X: np.ndarray, gt: np.ndarray | None, topology: str,
-    best: dict,
-    n_intervals_grid, overlap_grid,
-) -> dict:
-    """At the auto-tune winner, run the FULL Mapper sweep on Laplacian
-    + GT + PCA filters and return the augmented diagnostics."""
-    expected = EXPECTED_BETTI.get(topology, None)
-    k_filter = FILTER_K_BY_TOPOLOGY[topology]
+def _stage0_workerA(
+    topology: str, knn_k: int, sigma_factor_grid: Sequence[float],
+    n_samples: int, ambient_d: int, sigma_noise: float, seed: int,
+    inner_n_intervals_grid: Sequence[int], overlap_grid: Sequence[float],
+    spectral_K: int,
+) -> tuple[str, int, list[dict]]:
+    """One Stage A job: all sigma_factors for one (topology, knn_k).
 
-    lap_filter = laplacian_eigenvector_filter(
-        X, k=k_filter, eigenvectors=best['eigenvectors'],
-    )
-    sweep_lap = mapper_sweep(
-        X, lap_filter, topology=topology,
-        n_intervals_grid=n_intervals_grid, overlap_grid=overlap_grid,
-    )
-    cr_lap = correct_region(sweep_lap, expected) if expected else None
-    modal_lap = stable_betti(sweep_lap)
+    Pins BLAS to 1 thread so parallel and serial paths produce identical
+    numerical results. kNN graph is computed once and shared across the
+    sigma_factor variants (sigma only changes Gaussian weights, not the
+    underlying graph).
+    """
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=1):
+        X, _gt = _sample_X_gt(topology, n_samples, ambient_d, sigma_noise, seed)
+        knn_cache = compute_knn(X, knn_k)
+        results: list[dict] = []
+        for sf in sigma_factor_grid:
+            spec = coifman_lafon_spectrum(
+                X, knn_k=knn_k, K=spectral_K, sigma_factor=float(sf),
+                precomputed_knn=knn_cache,
+            )
+            results.append(
+                _score_inner(
+                    X, topology, knn_k, float(sf), spec,
+                    inner_n_intervals_grid, overlap_grid,
+                )
+            )
+    return topology, int(knn_k), results
 
-    cr_gt = None
-    if gt is not None and topology in {'circle', 'torus', 'sphere'}:
-        gt_lens = ground_truth_filter(gt)
-        sweep_gt = mapper_sweep(
-            X, gt_lens, topology=topology,
+
+# ---------------------------------------------------------------------------
+# Full-grid per-filter Mapper sweep (Stage B)
+# ---------------------------------------------------------------------------
+
+def _stage0_workerB(
+    topology: str, filter_kind: str,
+    n_samples: int, ambient_d: int, sigma_noise: float, seed: int,
+    eigenvectors: np.ndarray | None,
+    n_intervals_grid: Sequence[int], overlap_grid: Sequence[float],
+    k_filter: int,
+) -> tuple[str, str, dict]:
+    """One Stage B job: full Mapper sweep at the winner's spectrum, for one
+    filter (lap, gt, or pca).
+
+    Re-derives X (and gt for the GT filter) from `seed` so we don't need to
+    ship a (potentially large) X array through joblib pickle. The
+    `eigenvectors` argument is only required for filter_kind='lap'; pass
+    None for the other filters.
+    """
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=1):
+        X, gt = _sample_X_gt(topology, n_samples, ambient_d, sigma_noise, seed)
+        if filter_kind == 'lap':
+            if eigenvectors is None:
+                raise ValueError(
+                    "filter_kind='lap' requires eigenvectors of the winner spectrum."
+                )
+            lens = laplacian_eigenvector_filter(X, k=k_filter, eigenvectors=eigenvectors)
+        elif filter_kind == 'gt':
+            if gt is None:
+                raise ValueError(
+                    f"GT filter requested for topology={topology!r} but the "
+                    f"DGP returned no ground-truth coordinates."
+                )
+            lens = ground_truth_filter(gt)
+        elif filter_kind == 'pca':
+            lens = pca_filter(X, k=k_filter)
+        else:
+            raise ValueError(f"unknown filter_kind {filter_kind!r}")
+
+        expected = EXPECTED_BETTI.get(topology, None)
+        sweep = mapper_sweep(
+            X, lens, topology=topology,
             n_intervals_grid=n_intervals_grid, overlap_grid=overlap_grid,
+            n_jobs=1,  # never spawn nested loky pools from a worker
         )
-        cr_gt = correct_region(sweep_gt, expected) if expected else None
-
-    pca_lens = pca_filter(X, k=k_filter)
-    sweep_pca = mapper_sweep(
-        X, pca_lens, topology=topology,
-        n_intervals_grid=n_intervals_grid, overlap_grid=overlap_grid,
-    )
-    cr_pca = correct_region(sweep_pca, expected) if expected else None
-
-    return {
-        'mapper_laplacian_correct_region': cr_lap,
-        'mapper_laplacian_modal_betti': (int(modal_lap[0]), int(modal_lap[1])),
-        'mapper_gt_correct_region': cr_gt,
-        'mapper_pca_correct_region': cr_pca,
+        cr = correct_region(sweep, expected) if expected else None
+        modal = stable_betti(sweep)
+    return topology, filter_kind, {
+        'correct_region': cr,
+        'modal_betti': (int(modal[0]), int(modal[1])),
     }
 
 
-# Inner-loop reduced grids (used for cheap scoring during auto-tune).
-INNER_NI_GRID = (5, 8, 12)
+# ---------------------------------------------------------------------------
+# Dispatch helper
+# ---------------------------------------------------------------------------
 
+def _dispatch(worker_fn, jobs: Sequence[tuple], n_jobs: int) -> list:
+    """Run `worker_fn(*job)` for each job in `jobs`. Serial loop if n_jobs==1
+    or len(jobs)<=1; otherwise joblib loky pool with n_jobs workers.
+
+    The result list preserves input order regardless of dispatch path so
+    downstream consumers see deterministic iteration.
+    """
+    if n_jobs == 1 or len(jobs) <= 1:
+        return [worker_fn(*job) for job in jobs]
+    from joblib import Parallel, delayed
+    return Parallel(n_jobs=n_jobs, backend='loky')(
+        delayed(worker_fn)(*job) for job in jobs
+    )
+
+
+# ---------------------------------------------------------------------------
+# Winner pick + result assembly
+# ---------------------------------------------------------------------------
+
+def _pick_winner(entries: list[dict]) -> dict:
+    """Among entries for one topology, pick the one with the largest
+    correct-region fraction; tie-break with the smallest spectral log-ratio
+    error. Replicates the original `_score_config`-driven tie-break.
+    """
+    def key(e: dict):
+        cr = e['mapper_laplacian_correct_region']['region_fraction']
+        err = e['spectral_log_ratio_error']
+        err_for_rank = (
+            err if (err is not None and np.isfinite(err)) else float('inf')
+        )
+        return (cr, -err_for_rank)
+    return max(entries, key=key)
+
+
+def _assemble_stage0_result(
+    topology: str, n_samples: int, ambient_d: int, sigma_noise: float,
+    winner: dict, tuning_log: list[dict],
+    stage_b_for_topo: dict[str, dict],
+    log_ratio_threshold: float, correct_region_threshold: float,
+) -> Stage0Result:
+    cr_lap = (
+        stage_b_for_topo['lap']['correct_region']
+        or winner['mapper_laplacian_correct_region']
+    )
+    cr_frac = cr_lap['region_fraction']
+    log_err = winner['spectral_log_ratio_error']
+    has_ref = topology in REFERENCE_SPECTRA
+
+    spectral_pass = (
+        True if not has_ref
+        else (log_err is not None and log_err < log_ratio_threshold)
+    )
+    mapper_pass = bool(cr_frac >= correct_region_threshold)
+
+    cr_gt = (
+        stage_b_for_topo['gt']['correct_region']
+        if 'gt' in stage_b_for_topo else None
+    )
+    cr_pca = stage_b_for_topo['pca']['correct_region']
+    modal_lap = stage_b_for_topo['lap']['modal_betti']
+
+    return Stage0Result(
+        topology=topology,
+        n_samples=n_samples,
+        ambient_d=ambient_d,
+        sigma_noise=sigma_noise,
+        knn_k=winner['knn_k'],
+        sigma_factor=winner['sigma_factor'],
+        sigma_used=winner['sigma_used'],
+        spectral_log_ratio_error=log_err,
+        spectral_eigenvalues=winner['spectral_eigenvalues'],
+        mapper_laplacian_correct_region=cr_lap,
+        mapper_gt_correct_region=cr_gt,
+        mapper_pca_correct_region=cr_pca,
+        mapper_laplacian_modal_betti=modal_lap,
+        spectral_pass=spectral_pass,
+        mapper_pass=mapper_pass,
+        overall_pass=bool(spectral_pass and mapper_pass),
+        tuning_log=tuning_log,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Single-topology synchronous wrapper (back-compat)
+# ---------------------------------------------------------------------------
 
 def stage0_for_topology(
     topology: str,
@@ -225,120 +384,163 @@ def stage0_for_topology(
     log_ratio_threshold: float = 0.05,
     correct_region_threshold: float = 0.50,
 ) -> Stage0Result:
-    """Run Stage 0 auto-tune for one topology.
+    """Run Stage 0 auto-tune for one topology, single-process.
 
-    Two-stage search:
-      1. Inner loop over (knn_k, sigma_factor): cheap scoring on a reduced
-         (ni, ov) grid (default ni in {5, 8, 12}) using only the Laplacian
-         filter. ~5x faster than scoring on the full grid + all 3 filters.
-      2. At the winning (knn_k, sigma_factor): re-run the full 20-config
-         (n_intervals, overlap) grid on Laplacian + GT + PCA for the
-         headline diagnostics.
-
-    The winner is picked by max correct-region fraction (Laplacian filter,
-    inner grid); ties broken by lowest spectral log-ratio error.
+    Equivalent to `run_stage0([topology], n_jobs=1, ...)[topology]` but with
+    a more focused per-topology API for callers that want one-off
+    diagnostics (e.g. notebooks).
     """
-    if n_samples is None:
-        n_samples = DEFAULT_SAMPLE_SIZES.get(topology, 2_000)
+    return run_stage0(
+        topologies=(topology,),
+        ambient_d=ambient_d, sigma=sigma, seed=seed,
+        knn_k_grid=knn_k_grid, sigma_factor_grid=sigma_factor_grid,
+        n_intervals_grid=n_intervals_grid, overlap_grid=overlap_grid,
+        inner_n_intervals_grid=inner_n_intervals_grid,
+        spectral_K=spectral_K,
+        log_ratio_threshold=log_ratio_threshold,
+        correct_region_threshold=correct_region_threshold,
+        n_samples_override={topology: n_samples} if n_samples is not None else None,
+        n_jobs=1,
+    )[topology]
 
-    np.random.seed(seed)
-    dgp = make_dgp(
-        topology, d=ambient_d, sigma=sigma, c0=np.zeros(ambient_d),
-        **_dgp_kwargs(topology),
-    )
-    X, gt = dgp.sample_with_gt(n_samples)
-    has_ref = topology in REFERENCE_SPECTRA
 
-    tuning_log: list = []
-    best = None
-    n_total = len(list(knn_k_grid)) * len(list(sigma_factor_grid))
-    seen = 0
-    for kk in knn_k_grid:
-        for sf in sigma_factor_grid:
-            seen += 1
-            print(f"  [{topology}] auto-tune {seen}/{n_total}: "
-                  f"knn_k={kk}, sigma_factor={sf}", flush=True)
-            entry = _score_config(
-                X, topology, int(kk), float(sf),
-                inner_n_intervals_grid, overlap_grid, spectral_K,
-            )
-            log_entry = {k: v for k, v in entry.items() if k != 'eigenvectors'}
-            tuning_log.append(log_entry)
-            cr_frac = entry['mapper_laplacian_correct_region']['region_fraction']
-            err = entry['spectral_log_ratio_error']
-            err_for_rank = err if (err is not None and np.isfinite(err)) else float('inf')
-            print(f"    -> Lap correct-region={cr_frac*100:.0f}% "
-                  f"(reduced grid, {len(inner_n_intervals_grid) * len(overlap_grid)} configs); "
-                  f"spectral E={err_for_rank:.4f}", flush=True)
-            score = (cr_frac, -err_for_rank)
-            if best is None or score > (
-                best['mapper_laplacian_correct_region']['region_fraction'],
-                -(best['spectral_log_ratio_error']
-                  if (best['spectral_log_ratio_error'] is not None
-                      and np.isfinite(best['spectral_log_ratio_error']))
-                  else float('inf')),
-            ):
-                best = entry
-
-    print(f"  [{topology}] winner: knn_k={best['knn_k']}, "
-          f"sigma_factor={best['sigma_factor']}; running full 20-config grid + GT + PCA",
-          flush=True)
-    full = _full_diagnostics(
-        X, gt, topology, best,
-        n_intervals_grid, overlap_grid,
-    )
-
-    cr_lap = full['mapper_laplacian_correct_region'] or best['mapper_laplacian_correct_region']
-    cr_frac = cr_lap['region_fraction']
-    log_err = best['spectral_log_ratio_error']
-
-    spectral_pass = (
-        True if not has_ref
-        else (log_err is not None and log_err < log_ratio_threshold)
-    )
-    mapper_pass = bool(cr_frac >= correct_region_threshold)
-
-    return Stage0Result(
-        topology=topology,
-        n_samples=n_samples,
-        ambient_d=ambient_d,
-        sigma_noise=sigma,
-        knn_k=best['knn_k'],
-        sigma_factor=best['sigma_factor'],
-        sigma_used=best['sigma_used'],
-        spectral_log_ratio_error=log_err,
-        spectral_eigenvalues=best['spectral_eigenvalues'],
-        mapper_laplacian_correct_region=cr_lap,
-        mapper_gt_correct_region=full['mapper_gt_correct_region'],
-        mapper_pca_correct_region=full['mapper_pca_correct_region'],
-        mapper_laplacian_modal_betti=full['mapper_laplacian_modal_betti'],
-        spectral_pass=spectral_pass,
-        mapper_pass=mapper_pass,
-        overall_pass=bool(spectral_pass and mapper_pass),
-        tuning_log=tuning_log,
-    )
-
+# ---------------------------------------------------------------------------
+# Multi-topology orchestrator
+# ---------------------------------------------------------------------------
 
 def run_stage0(
     topologies: Sequence[str] = ('circle', 'torus', 'sphere', 'figure_eight'),
     out_yaml: Path | None = None,
     out_json: Path | None = None,
     quick: bool = False,
-    **per_topology_kwargs,
+    n_jobs: int = 1,
+    ambient_d: int = 64,
+    sigma: float = 0.01,
+    seed: int = 0,
+    knn_k_grid: Sequence[int] = DEFAULT_KNN_K_GRID,
+    sigma_factor_grid: Sequence[float] = DEFAULT_SIGMA_FACTOR_GRID,
+    n_intervals_grid: Sequence[int] = N_INTERVALS_GRID,
+    overlap_grid: Sequence[float] = OVERLAP_GRID,
+    inner_n_intervals_grid: Sequence[int] = INNER_NI_GRID,
+    spectral_K: int = 20,
+    log_ratio_threshold: float = 0.05,
+    correct_region_threshold: float = 0.50,
+    n_samples_override: dict[str, int] | None = None,
 ) -> dict[str, Stage0Result]:
+    """Two-stage flat-parallel Stage 0.
+
+    Stage A: 4 x 3 = 12 jobs scoring (knn_k, sigma_factor) per topology
+             (sigma_factor variants share the kNN inside one job).
+    Stage B: 4 x 3 - 1 = 11 jobs running the full Mapper sweep on each filter
+             at the winning (knn_k, sigma_factor) per topology.
+
+    `n_jobs=1` is a serial loop over the same workers (identical results).
+    """
+    # Resolve per-topology N (with `--quick` halving and per-call override).
+    n_samples_by_topo: dict[str, int] = {}
+    for topo in topologies:
+        if n_samples_override and n_samples_override.get(topo) is not None:
+            n_samples_by_topo[topo] = int(n_samples_override[topo])
+        else:
+            n = DEFAULT_SAMPLE_SIZES.get(topo, 2_000)
+            if quick:
+                n = max(n // 2, 1_000)
+            n_samples_by_topo[topo] = n
+
+    # ------- Stage A: build flat job list ----------------------------------
+    knn_k_grid_t = tuple(int(k) for k in knn_k_grid)
+    sigma_factor_grid_t = tuple(float(s) for s in sigma_factor_grid)
+    inner_ni_grid_t = tuple(int(n) for n in inner_n_intervals_grid)
+    overlap_grid_t = tuple(float(o) for o in overlap_grid)
+    n_intervals_grid_t = tuple(int(n) for n in n_intervals_grid)
+
+    stage_a_jobs = [
+        (
+            topo, kk, sigma_factor_grid_t,
+            n_samples_by_topo[topo], ambient_d, sigma, seed,
+            inner_ni_grid_t, overlap_grid_t, spectral_K,
+        )
+        for topo in topologies
+        for kk in knn_k_grid_t
+    ]
+    print(f"\n=== Stage 0: dispatching {len(stage_a_jobs)} Stage A jobs "
+          f"(n_jobs={n_jobs}) ===", flush=True)
+    stage_a_outputs = _dispatch(_stage0_workerA, stage_a_jobs, n_jobs)
+
+    # ------- Group + winner pick (serial) ----------------------------------
+    entries_by_topo: dict[str, list[dict]] = {topo: [] for topo in topologies}
+    for topo, _kk, entries in stage_a_outputs:
+        entries_by_topo[topo].extend(entries)
+
+    winners: dict[str, dict] = {}
+    tuning_logs: dict[str, list[dict]] = {}
+    for topo in topologies:
+        # Print per-topology auto-tune log in the same format as before.
+        print(f"\n[{topo}] auto-tune scored {len(entries_by_topo[topo])} configs:",
+              flush=True)
+        log_no_ev: list[dict] = []
+        for entry in entries_by_topo[topo]:
+            cr_frac = entry['mapper_laplacian_correct_region']['region_fraction']
+            err = entry['spectral_log_ratio_error']
+            err_for_rank = (
+                err if (err is not None and np.isfinite(err)) else float('inf')
+            )
+            print(f"    knn_k={entry['knn_k']}, sigma_factor={entry['sigma_factor']}: "
+                  f"Lap correct-region={cr_frac*100:.0f}% "
+                  f"({len(inner_ni_grid_t) * len(overlap_grid_t)} configs); "
+                  f"spectral E={err_for_rank:.4f}", flush=True)
+            log_no_ev.append({k: v for k, v in entry.items() if k != 'eigenvectors'})
+        tuning_logs[topo] = log_no_ev
+        winners[topo] = _pick_winner(entries_by_topo[topo])
+        print(f"  [{topo}] winner: knn_k={winners[topo]['knn_k']}, "
+              f"sigma_factor={winners[topo]['sigma_factor']}", flush=True)
+
+    # ------- Stage B: build flat job list ----------------------------------
+    stage_b_jobs: list[tuple] = []
+    for topo in topologies:
+        winner = winners[topo]
+        k_filter = FILTER_K_BY_TOPOLOGY[topo]
+        for fk in ('lap', 'gt', 'pca'):
+            if fk == 'gt' and topo not in GT_FILTER_TOPOLOGIES:
+                continue
+            ev = winner['eigenvectors'] if fk == 'lap' else None
+            stage_b_jobs.append((
+                topo, fk,
+                n_samples_by_topo[topo], ambient_d, sigma, seed,
+                ev,
+                n_intervals_grid_t, overlap_grid_t, k_filter,
+            ))
+    print(f"\n=== Stage 0: dispatching {len(stage_b_jobs)} Stage B jobs "
+          f"(n_jobs={n_jobs}) ===", flush=True)
+    stage_b_outputs = _dispatch(_stage0_workerB, stage_b_jobs, n_jobs)
+
+    stage_b_by_topo: dict[str, dict[str, dict]] = {topo: {} for topo in topologies}
+    for topo, fk, payload in stage_b_outputs:
+        stage_b_by_topo[topo][fk] = payload
+
+    # ------- Assemble per-topology Stage0Result + report -------------------
     results: dict[str, Stage0Result] = {}
     for topo in topologies:
-        n = DEFAULT_SAMPLE_SIZES.get(topo, 2_000)
-        if quick:
-            n = max(n // 2, 1_000)
-        print(f"\n=== Stage 0: {topo} (N={n}) ===", flush=True)
-        res = stage0_for_topology(topo, n_samples=n, **per_topology_kwargs)
+        winner = winners[topo]
+        res = _assemble_stage0_result(
+            topology=topo,
+            n_samples=n_samples_by_topo[topo],
+            ambient_d=ambient_d,
+            sigma_noise=sigma,
+            winner=winner,
+            tuning_log=tuning_logs[topo],
+            stage_b_for_topo=stage_b_by_topo[topo],
+            log_ratio_threshold=log_ratio_threshold,
+            correct_region_threshold=correct_region_threshold,
+        )
         results[topo] = res
         cr = res.mapper_laplacian_correct_region
         gt_str = ''
         if res.mapper_gt_correct_region is not None:
-            gt_str = (f"  GT correct-region: {res.mapper_gt_correct_region['region_fraction']*100:.0f}% "
+            gt_str = (f"  GT correct-region: "
+                      f"{res.mapper_gt_correct_region['region_fraction']*100:.0f}% "
                       f"(size={res.mapper_gt_correct_region['region_size']})")
+        print(f"\n[{topo}] (N={res.n_samples})")
         print(f"  best: knn_k={res.knn_k}, sigma_factor={res.sigma_factor}")
         if res.spectral_log_ratio_error is not None:
             print(f"  spectral E={res.spectral_log_ratio_error:.4f} -> "
@@ -400,6 +602,9 @@ def main():
     parser.add_argument('--out_json', default='configs/stage0/baseline.json')
     parser.add_argument('--quick', action='store_true',
                         help='Halve sample sizes for development.')
+    parser.add_argument('--n_jobs', type=int, default=1,
+                        help='Worker count for the joblib loky pool. '
+                             '1 = serial. Set to a value <= number of CPUs.')
     args = parser.parse_args()
 
     run_stage0(
@@ -409,6 +614,7 @@ def main():
         ambient_d=args.ambient_d,
         sigma=args.sigma,
         quick=args.quick,
+        n_jobs=args.n_jobs,
     )
 
 

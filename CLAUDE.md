@@ -85,7 +85,23 @@ sae_topology/
 - **Random-init SAEs may not fail on simple manifolds.** With ReLU and $m \gg d$, random projections of the manifold preserve topology by Johnson–Lindenstrauss-style arguments. Smoke tests on random-init ReLU+L1 on $S^1$ recover $(1, 1)$ Betti and $\mathcal{E} \approx 0.02$. The spec's "random-init negative control" is therefore a weaker check than implied; undersized-dictionary or pre-trained-but-collapsed controls are stricter.
 - **TopK collapses post-activations into many components.** Empirically, TopK at $k \in \{1, 2, 3\}$ on $S^1$ at 10k training steps gives $b_0 \in [30, 90]$ while MSE is low — the SAE encodes the manifold via a discrete partition of feature triplets rather than a smooth ring. Whether this resolves at 30k+ steps is open. Treat short-run TopK results with skepticism.
 - **Cover-overlap pollution at high overlap** (`overlap=0.5`): triple-overlap cover regions inflate $b_1$ unless 2-cells are filled. Our `graph_betti` does this; without the fix, $b_1$ would be reported 5–30× too high.
-- **Stage 0 tuning runtime:** auto-sweep over 9 configs × 4 manifolds with $N \in \{2000, 10000\}$ takes ~30–60 minutes. Use `--quick` flag for development at half-N.
+- **Stage 0 tuning runtime:** auto-sweep over 9 configs × 4 manifolds with $N \in \{2000, 10000\}$ takes ~30–60 minutes serial. Use `--n_jobs N` (joblib loky) to parallelize Stage A (12 jobs: 4 topo × 3 knn_k, with 3 sigma_factor variants sharing kNN inside each job) and Stage B (≤12 jobs: topo × filter); 12 workers is the natural cap. Use `--quick` flag for development at half-N. Determinism: serial vs parallel produces bit-identical `baseline.yaml` (covered in `tests/test_stage0_determinism.py`).
+
+## Parallelism
+
+Single `--n_jobs N` flag toggles process-level parallelism (joblib loky backend, BLAS pinned to 1 thread per worker via `threadpoolctl`):
+
+- `mapper_sweep(..., n_jobs=N)`: dispatches the (n_intervals × overlap) cover configs across N workers. Importers calling from inside an outer joblib pool MUST pass `n_jobs=1` (no nested loky pools).
+- `python -m sae_topology.experiments.stage0_validate --n_jobs N`: flat (topology × knn_k) Stage A pool + (topology × filter) Stage B pool, both at level N.
+- `python -m sae_topology.experiments.runner --config <yaml> --n_jobs N`: Mapper (Lap / GT / PCA) filters dispatched in parallel.
+- `python -m sae_topology.experiments.measure_parallel_speedup --jobs 1 4 12`: benchmark wall-clock at varying N, with `--check_identical` to confirm correctness.
+
+The full test matrix lives in `tests/` (24 tests, ~8 min on the 56-core compute node):
+- `test_knn_cache.py` — `precomputed_knn` API for sigma_factor variant sharing.
+- `test_sparse_eigsh_robustness.py` — 4-tier ARPACK fallback cascade in `laplacian_eigendecomposition`.
+- `test_parallel_determinism.py` — `mapper_sweep` serial == parallel.
+- `test_runner_filter_parallelism.py` — runner.py serial == parallel.
+- `test_stage0_determinism.py` — full Stage 0 pipeline serial == parallel (incl. byte-equal `baseline.yaml`).
 
 ## Stage 0 Pass / Fail Conventions
 
