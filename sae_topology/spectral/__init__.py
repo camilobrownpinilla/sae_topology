@@ -8,6 +8,7 @@ from .graph_laplacian import (
 from .metrics import (
     log_ratio_error,
     multiplicity_check,
+    multiplicity_clusters_match,
     near_zero_count,
     first_nonzero_eigenvalue,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "DENSE_FALLBACK_MAX_N",
     "log_ratio_error",
     "multiplicity_check",
+    "multiplicity_clusters_match",
     "near_zero_count",
     "first_nonzero_eigenvalue",
     "GROUND_TRUTH_BETTI",

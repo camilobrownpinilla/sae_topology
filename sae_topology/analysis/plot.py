@@ -182,7 +182,9 @@ def plot_spectrum_vs_theory(
     """
     emp = np.sort(np.asarray(emp_eigs, dtype=float))[:K]
     theory = np.asarray(list(theory_ratios)[:K], dtype=float)
-    nonzero_emp = emp[emp > 0]
+    # Use a real numerical-zero threshold: ARPACK can return ~1e-16 for the
+    # zero eigenvalue rather than exact 0, which `emp > 0` won't filter.
+    nonzero_emp = emp[emp > 1e-10]
     if len(nonzero_emp) == 0:
         raise ValueError("All empirical eigenvalues are zero.")
     emp_ratio = emp / nonzero_emp[0]
@@ -191,9 +193,10 @@ def plot_spectrum_vs_theory(
         theory_norm = theory_norm / theory_norm[1]
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    idx = np.arange(len(emp_ratio))
-    ax.plot(idx, np.maximum(emp_ratio, 1e-10), 'o-', label='empirical', color='steelblue')
-    ax.plot(idx[:len(theory_norm)], np.maximum(theory_norm, 1e-10), 's--',
+    emp_idx = np.arange(len(emp_ratio))
+    theory_idx = np.arange(len(theory_norm))
+    ax.plot(emp_idx, np.maximum(emp_ratio, 1e-10), 'o-', label='empirical', color='steelblue')
+    ax.plot(theory_idx, np.maximum(theory_norm, 1e-10), 's--',
             label='theory (Laplace-Beltrami)', color='firebrick')
     ax.set_yscale('log')
     ax.set_xlabel('Eigenvalue index $i$')

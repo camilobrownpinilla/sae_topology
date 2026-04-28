@@ -56,6 +56,10 @@ from sae_topology.mapper import (
     N_INTERVALS_GRID,
     OVERLAP_GRID,
 )
+from sae_topology.mapper.pipeline import (
+    _mapper_one_config,
+    global_distance_threshold,
+)
 from sae_topology.spectral import (
     coifman_lafon_spectrum,
     compute_knn,
@@ -65,20 +69,29 @@ from sae_topology.spectral import (
 
 
 DEFAULT_SAMPLE_SIZES = {
-    'circle': 2_000,
-    'sphere': 10_000,
-    'torus':  10_000,
-    'figure_eight': 2_000,
+    'circle': 100_000,
+    'sphere': 100_000,
+    'torus':  100_000,
+    'figure_eight': 100_000,
 }
+
+# Default topologies for the Stage 0 CLI: only the three smooth manifolds
+# in stage0_tuning.md §2. figure_eight remains callable via --topologies.
+DEFAULT_STAGE0_TOPOLOGIES = ('circle', 'torus', 'sphere')
 
 # Auto-tune grid (per spec section 7.1 plus our extension).
 DEFAULT_KNN_K_GRID = (15, 25, 40)
 DEFAULT_SIGMA_FACTOR_GRID = (0.5, 1.0, 2.0)
 
+# Filter dim per topology = multiplicity of the first non-trivial Laplace-
+# Beltrami eigenvalue (stage0_tuning.md §4.1):
+#   S^1 : λ_1 = 1  has mult 2 (cos θ, sin θ)
+#   T^2 : λ_1 = 1  has mult 4 (cos θ, sin θ, cos φ, sin φ)
+#   S^2 : λ_1 = 2  has mult 3 (degree-1 spherical harmonics: x, y, z)
 FILTER_K_BY_TOPOLOGY = {
-    'circle': 3,
+    'circle': 2,
     'torus':  4,
-    'sphere': 4,
+    'sphere': 3,
     'figure_eight': 3,
 }
 
@@ -143,6 +156,14 @@ class Stage0Result:
     overall_pass: bool
 
     tuning_log: list  # one entry per (knn_k, sigma_factor) tried
+
+    # Validation criteria (stage0_tuning.md §4 + sign-off checklist §10).
+    multiplicity_pass: bool = False
+    multiplicity_check: dict | None = None
+    near_zero_pass: bool = False
+    near_zero_count: int = 0
+    mapper_interior_pass: bool = False
+    failure_mode_diagnostic: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +297,43 @@ def _stage0_workerB(
     return topology, filter_kind, {
         'correct_region': cr,
         'modal_betti': (int(modal[0]), int(modal[1])),
+        'sweep': sweep,
     }
+
+
+# ---------------------------------------------------------------------------
+# Stage B FLAT — one job per (topology, filter, n_intervals, overlap).
+# Used to push parallelism from 9 outer jobs (each running 24 Mapper configs
+# sequentially) to 9 * 24 = 216 jobs across one loky pool. At n_jobs=56 the
+# bottleneck Mapper sweep compresses ~6x, dominating the wall-clock budget.
+# ---------------------------------------------------------------------------
+
+def _stage0_flat_worker(
+    topology: str, filter_kind: str, ni: int, ov: float,
+    n_samples: int, ambient_d: int, sigma_noise: float, seed: int,
+    lens: np.ndarray, distance_threshold: float, k_filter: int,
+    eigenvectors: np.ndarray | None,
+) -> tuple[str, str, int, float, dict]:
+    """One flat Stage B job: run Mapper once at a single (ni, ov).
+
+    The lens is precomputed once per (topology, filter) by the orchestrator
+    and passed in. We re-derive X here from `seed` (cheap) so we don't
+    pickle a (potentially large) X array per job. Everything stays bit-
+    deterministic since the seed pins the sample.
+    """
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=1):
+        X, _gt = _sample_X_gt(topology, n_samples, ambient_d, sigma_noise, seed)
+        # `lens` is the precomputed filter values. For 'lap' it was computed
+        # from `eigenvectors` at the winner; for 'gt' / 'pca' from X / gt
+        # directly. We pass `eigenvectors` only for diagnostic; the lens is
+        # the load-bearing input here.
+        del eigenvectors
+        key, entry = _mapper_one_config(
+            X, lens, int(ni), float(ov),
+            float(distance_threshold), topology,
+        )
+    return topology, filter_kind, key[0], key[1], entry
 
 
 # ---------------------------------------------------------------------------
@@ -322,12 +379,22 @@ def _assemble_stage0_result(
     winner: dict, tuning_log: list[dict],
     stage_b_for_topo: dict[str, dict],
     log_ratio_threshold: float, correct_region_threshold: float,
+    multiplicity_eps: float = 0.05,
+    multiplicity_n_clusters: int = 4,
 ) -> Stage0Result:
+    from sae_topology.spectral import (
+        first_nonzero_eigenvalue,
+        multiplicity_clusters_match,
+        near_zero_count as near_zero_count_fn,
+    )
+    from sae_topology.mapper import failure_mode_diagnostic
+
     cr_lap = (
         stage_b_for_topo['lap']['correct_region']
         or winner['mapper_laplacian_correct_region']
     )
     cr_frac = cr_lap['region_fraction']
+    is_interior = bool(cr_lap.get('is_interior', False))
     log_err = winner['spectral_log_ratio_error']
     has_ref = topology in REFERENCE_SPECTRA
 
@@ -343,6 +410,51 @@ def _assemble_stage0_result(
     )
     cr_pca = stage_b_for_topo['pca']['correct_region']
     modal_lap = stage_b_for_topo['lap']['modal_betti']
+    sweep_lap = stage_b_for_topo['lap'].get('sweep')
+
+    # ----- New validation criteria (stage0_tuning.md §4.2 + §4.1) ----------
+    eigs = np.asarray(winner['spectral_eigenvalues'], dtype=float)
+
+    if has_ref:
+        try:
+            mult_check = multiplicity_clusters_match(
+                eigs,
+                REFERENCE_SPECTRA[topology]['levels'],
+                REFERENCE_SPECTRA[topology]['mults'],
+                eps=multiplicity_eps,
+                n_clusters=multiplicity_n_clusters,
+            )
+            multiplicity_pass = bool(mult_check['all_match'])
+        except Exception as e:
+            mult_check = {'error': str(e), 'all_match': False, 'per_cluster': []}
+            multiplicity_pass = False
+    else:
+        # No closed-form reference (e.g., figure_eight): not enforced.
+        mult_check = None
+        multiplicity_pass = True
+
+    # Near-zero count: empirical eigenvalues below 0.1 * lambda_1 must equal
+    # b_0 of the manifold (1 for all single-component manifolds in Stage 0).
+    expected_b0 = (EXPECTED_BETTI.get(topology, (1, 0))[0])
+    lam1 = first_nonzero_eigenvalue(eigs, zero_threshold=1e-8)
+    if lam1 is not None and lam1 > 0:
+        nz = near_zero_count_fn(eigs, threshold=0.1 * lam1)
+    else:
+        nz = int((eigs < 1e-8).sum())
+    near_zero_pass = bool(nz == expected_b0)
+
+    expected_betti = EXPECTED_BETTI.get(topology, None)
+    if sweep_lap and expected_betti:
+        failure_diag = failure_mode_diagnostic(sweep_lap, expected_betti)
+    else:
+        failure_diag = None
+
+    mapper_interior_pass = bool(is_interior)
+
+    overall_pass = bool(
+        spectral_pass and mapper_pass and mapper_interior_pass
+        and multiplicity_pass and near_zero_pass
+    )
 
     return Stage0Result(
         topology=topology,
@@ -360,8 +472,14 @@ def _assemble_stage0_result(
         mapper_laplacian_modal_betti=modal_lap,
         spectral_pass=spectral_pass,
         mapper_pass=mapper_pass,
-        overall_pass=bool(spectral_pass and mapper_pass),
+        overall_pass=overall_pass,
         tuning_log=tuning_log,
+        multiplicity_pass=multiplicity_pass,
+        multiplicity_check=mult_check,
+        near_zero_pass=near_zero_pass,
+        near_zero_count=int(nz),
+        mapper_interior_pass=mapper_interior_pass,
+        failure_mode_diagnostic=failure_diag,
     )
 
 
@@ -380,9 +498,11 @@ def stage0_for_topology(
     n_intervals_grid: Sequence[int] = N_INTERVALS_GRID,
     overlap_grid: Sequence[float] = OVERLAP_GRID,
     inner_n_intervals_grid: Sequence[int] = INNER_NI_GRID,
-    spectral_K: int = 20,
+    spectral_K: int = 25,
     log_ratio_threshold: float = 0.05,
     correct_region_threshold: float = 0.50,
+    multiplicity_eps: float = 0.05,
+    multiplicity_n_clusters: int = 4,
 ) -> Stage0Result:
     """Run Stage 0 auto-tune for one topology, single-process.
 
@@ -399,6 +519,8 @@ def stage0_for_topology(
         spectral_K=spectral_K,
         log_ratio_threshold=log_ratio_threshold,
         correct_region_threshold=correct_region_threshold,
+        multiplicity_eps=multiplicity_eps,
+        multiplicity_n_clusters=multiplicity_n_clusters,
         n_samples_override={topology: n_samples} if n_samples is not None else None,
         n_jobs=1,
     )[topology]
@@ -409,7 +531,7 @@ def stage0_for_topology(
 # ---------------------------------------------------------------------------
 
 def run_stage0(
-    topologies: Sequence[str] = ('circle', 'torus', 'sphere', 'figure_eight'),
+    topologies: Sequence[str] = DEFAULT_STAGE0_TOPOLOGIES,
     out_yaml: Path | None = None,
     out_json: Path | None = None,
     quick: bool = False,
@@ -422,10 +544,14 @@ def run_stage0(
     n_intervals_grid: Sequence[int] = N_INTERVALS_GRID,
     overlap_grid: Sequence[float] = OVERLAP_GRID,
     inner_n_intervals_grid: Sequence[int] = INNER_NI_GRID,
-    spectral_K: int = 20,
+    spectral_K: int = 25,
     log_ratio_threshold: float = 0.05,
     correct_region_threshold: float = 0.50,
+    multiplicity_eps: float = 0.05,
+    multiplicity_n_clusters: int = 4,
     n_samples_override: dict[str, int] | None = None,
+    capture_sweeps_into: dict | None = None,
+    capture_winners_into: dict | None = None,
 ) -> dict[str, Stage0Result]:
     """Two-stage flat-parallel Stage 0.
 
@@ -495,28 +621,82 @@ def run_stage0(
         print(f"  [{topo}] winner: knn_k={winners[topo]['knn_k']}, "
               f"sigma_factor={winners[topo]['sigma_factor']}", flush=True)
 
-    # ------- Stage B: build flat job list ----------------------------------
-    stage_b_jobs: list[tuple] = []
+    # ------- Stage B prep (serial, cheap): precompute lens + threshold -----
+    # We compute the lens (filter values) once per (topology, filter) here
+    # so that the flat 216-job pool below only re-derives X (cheap from
+    # seed) inside each worker. The lens is the load-bearing input; passing
+    # it via joblib pickle is small (max ~3 MB per (topology, filter)).
+    print(f"\n=== Stage 0: pre-computing lens + threshold per (topology, filter) "
+          f"(serial) ===", flush=True)
+    lens_by_pair: dict[tuple[str, str], np.ndarray] = {}
+    threshold_by_topo: dict[str, float] = {}
+    k_filter_by_topo: dict[str, int] = {}
     for topo in topologies:
         winner = winners[topo]
         k_filter = FILTER_K_BY_TOPOLOGY[topo]
-        for fk in ('lap', 'gt', 'pca'):
-            if fk == 'gt' and topo not in GT_FILTER_TOPOLOGIES:
-                continue
-            ev = winner['eigenvectors'] if fk == 'lap' else None
-            stage_b_jobs.append((
-                topo, fk,
-                n_samples_by_topo[topo], ambient_d, sigma, seed,
-                ev,
-                n_intervals_grid_t, overlap_grid_t, k_filter,
-            ))
-    print(f"\n=== Stage 0: dispatching {len(stage_b_jobs)} Stage B jobs "
+        k_filter_by_topo[topo] = k_filter
+        X_topo, gt_topo = _sample_X_gt(
+            topo, n_samples_by_topo[topo], ambient_d, sigma, seed,
+        )
+        threshold_by_topo[topo] = float(global_distance_threshold(X_topo))
+        # Laplacian filter: derive from the winner's eigenvectors.
+        lens_by_pair[(topo, 'lap')] = laplacian_eigenvector_filter(
+            X_topo, k=k_filter, eigenvectors=winner['eigenvectors'],
+        )
+        # GT filter: only for manifolds that surface intrinsic coords.
+        if topo in GT_FILTER_TOPOLOGIES and gt_topo is not None:
+            lens_by_pair[(topo, 'gt')] = ground_truth_filter(gt_topo)
+        # PCA filter: top-k principal components of X.
+        lens_by_pair[(topo, 'pca')] = pca_filter(X_topo, k=k_filter)
+
+    # ------- Stage B FLAT: 216 jobs in one loky pool -----------------------
+    flat_jobs: list[tuple] = []
+    for (topo, fk), lens in lens_by_pair.items():
+        for ni in n_intervals_grid_t:
+            for ov in overlap_grid_t:
+                flat_jobs.append((
+                    topo, fk, int(ni), float(ov),
+                    n_samples_by_topo[topo], ambient_d, sigma, seed,
+                    lens, threshold_by_topo[topo], k_filter_by_topo[topo],
+                    None,  # eigenvectors arg, unused once lens is precomputed
+                ))
+    print(f"\n=== Stage 0: dispatching {len(flat_jobs)} flat Stage B jobs "
           f"(n_jobs={n_jobs}) ===", flush=True)
-    stage_b_outputs = _dispatch(_stage0_workerB, stage_b_jobs, n_jobs)
+    flat_outputs = _dispatch(_stage0_flat_worker, flat_jobs, n_jobs)
+
+    # ------- Reassemble per-(topology, filter) sweep dicts ----------------
+    sweep_by_pair: dict[tuple[str, str], dict] = {pair: {} for pair in lens_by_pair}
+    for topo, fk, ni, ov, entry in flat_outputs:
+        sweep_by_pair[(topo, fk)][(int(ni), float(ov))] = entry
 
     stage_b_by_topo: dict[str, dict[str, dict]] = {topo: {} for topo in topologies}
-    for topo, fk, payload in stage_b_outputs:
-        stage_b_by_topo[topo][fk] = payload
+    for (topo, fk), sweep in sweep_by_pair.items():
+        expected = EXPECTED_BETTI.get(topo, None)
+        cr = correct_region(sweep, expected) if expected else None
+        modal = stable_betti(sweep)
+        stage_b_by_topo[topo][fk] = {
+            'correct_region': cr,
+            'modal_betti': (int(modal[0]), int(modal[1])),
+            'sweep': sweep,
+        }
+
+    # Side-channel: let the orchestrator capture the raw sweeps + winners
+    # so it can re-use them for plotting / artifact persistence without
+    # re-running Stage B. Backwards compatible: existing callers pass None.
+    if capture_sweeps_into is not None:
+        for (topo, fk), sweep in sweep_by_pair.items():
+            capture_sweeps_into.setdefault(topo, {})[fk] = sweep
+    if capture_winners_into is not None:
+        for topo, w in winners.items():
+            # eigenvectors are heavy; expose them so the orchestrator skips
+            # one eigsh call per topology during artifact persistence.
+            capture_winners_into[topo] = {
+                'knn_k': int(w['knn_k']),
+                'sigma_factor': float(w['sigma_factor']),
+                'sigma_used': float(w['sigma_used']),
+                'spectral_eigenvalues': list(w['spectral_eigenvalues']),
+                'eigenvectors': w['eigenvectors'],
+            }
 
     # ------- Assemble per-topology Stage0Result + report -------------------
     results: dict[str, Stage0Result] = {}
@@ -532,6 +712,8 @@ def run_stage0(
             stage_b_for_topo=stage_b_by_topo[topo],
             log_ratio_threshold=log_ratio_threshold,
             correct_region_threshold=correct_region_threshold,
+            multiplicity_eps=multiplicity_eps,
+            multiplicity_n_clusters=multiplicity_n_clusters,
         )
         results[topo] = res
         cr = res.mapper_laplacian_correct_region
@@ -550,14 +732,34 @@ def run_stage0(
         print(f"  mapper Laplacian correct-region: {cr['region_fraction']*100:.0f}% "
               f"(size={cr['region_size']}/{cr['total_configs']}, "
               f"n_correct_anywhere={cr['n_correct_total']})  -> "
-              f"{'PASS' if res.mapper_pass else 'FAIL'}")
+              f"{'PASS' if res.mapper_pass else 'FAIL'}  "
+              f"interior={'PASS' if res.mapper_interior_pass else 'FAIL'}")
+        print(f"  multiplicity (first {multiplicity_n_clusters} clusters): "
+              f"{'PASS' if res.multiplicity_pass else 'FAIL'}  "
+              f"near-zero count={res.near_zero_count} "
+              f"({'PASS' if res.near_zero_pass else 'FAIL'})")
         print(f"  modal Betti (Laplacian): {res.mapper_laplacian_modal_betti}{gt_str}")
         print(f"  overall: {'PASS' if res.overall_pass else 'FAIL'}")
 
     if out_yaml is not None:
         out_yaml = Path(out_yaml)
         out_yaml.parent.mkdir(parents=True, exist_ok=True)
-        baseline = {
+        meta = {
+            'n_samples': max(r.n_samples for r in results.values()) if results else None,
+            'ambient_d': max(r.ambient_d for r in results.values()) if results else None,
+            'n_intervals_grid': list(n_intervals_grid_t),
+            'overlap_grid': list(overlap_grid_t),
+            'knn_k_grid': list(knn_k_grid_t),
+            'sigma_factor_grid': list(sigma_factor_grid_t),
+            'spectral_K': spectral_K,
+            'multiplicity_eps': multiplicity_eps,
+            'multiplicity_n_clusters': multiplicity_n_clusters,
+            'sigma_rule': 'median_heuristic',
+            'laplacian': 'coifman_lafon_alpha1',
+            'cluster_rule': 'single_linkage_global_5x_median_knn',
+        }
+        baseline = {'_meta': meta}
+        baseline.update({
             topo: {
                 'n_samples': r.n_samples,
                 'ambient_d': r.ambient_d,
@@ -567,14 +769,18 @@ def run_stage0(
                 'sigma_used': r.sigma_used,
                 'correct_region_fraction': r.mapper_laplacian_correct_region['region_fraction'],
                 'correct_region_size': r.mapper_laplacian_correct_region['region_size'],
+                'mapper_interior_pass': r.mapper_interior_pass,
                 'spectral_log_ratio_error': r.spectral_log_ratio_error,
                 'mapper_laplacian_modal_betti': list(r.mapper_laplacian_modal_betti),
+                'multiplicity_pass': r.multiplicity_pass,
+                'near_zero_pass': r.near_zero_pass,
+                'near_zero_count': r.near_zero_count,
                 'spectral_pass': r.spectral_pass,
                 'mapper_pass': r.mapper_pass,
                 'overall_pass': r.overall_pass,
             }
             for topo, r in results.items()
-        }
+        })
         with open(out_yaml, 'w') as f:
             yaml.safe_dump(baseline, f, sort_keys=False)
         print(f"\nWrote baseline to {out_yaml}")
@@ -595,7 +801,7 @@ def run_stage0(
 def main():
     parser = argparse.ArgumentParser(description="Stage 0 pipeline validation (auto-tune)")
     parser.add_argument('--topologies', nargs='+',
-                        default=['circle', 'torus', 'sphere', 'figure_eight'])
+                        default=list(DEFAULT_STAGE0_TOPOLOGIES))
     parser.add_argument('--ambient_d', type=int, default=64)
     parser.add_argument('--sigma', type=float, default=0.01)
     parser.add_argument('--out_yaml', default='configs/stage0/baseline.yaml')

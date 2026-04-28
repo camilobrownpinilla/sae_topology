@@ -70,6 +70,80 @@ def multiplicity_check(emp: np.ndarray, theory_levels: np.ndarray,
     return counts
 
 
+def multiplicity_clusters_match(
+    emp: np.ndarray,
+    theory_levels: np.ndarray,
+    theory_mults: np.ndarray,
+    eps: float = 0.05,
+    n_clusters: int = 4,
+) -> dict:
+    """Strict per-cluster multiplicity match for the first `n_clusters`
+    theoretical Laplace-Beltrami eigenvalue levels.
+
+    Per stage0_tuning.md §4.2.2: cluster the empirical eigenvalues (after
+    normalising by the first non-zero) against the theoretical levels with
+    additive window `max(eps, eps * |L|)`; verify that the empirical count
+    in each window equals the theoretical multiplicity. The first 3-4
+    multiplicity clusters MUST match exactly to pass.
+
+    Note: this is stricter than `multiplicity_check` (which only reports
+    counts). Here we add the per-cluster pass/fail and an aggregate.
+
+    Args:
+        emp:           empirical eigenvalues (sorted ascending; the leading
+                       zero eigenvalue is included and skipped internally).
+        theory_levels: closed-form eigenvalue levels (e.g., S1_LEVELS,
+                       T2_LEVELS, S2_LEVELS — already in lambda/lambda_1
+                       ratio form, with a leading 0).
+        theory_mults:  multiplicities of each theoretical level.
+        eps:           tolerance on the (level, count) window.
+        n_clusters:    how many of the first non-zero theoretical levels
+                       to check exactly. Levels beyond this index are
+                       reported but not enforced.
+
+    Returns dict with:
+        per_cluster: list of {idx, level, theory_mult, emp_count, match}
+                     for each enforced level (excludes the leading zero).
+        all_match:   True iff every per_cluster entry has match=True.
+        n_clusters_checked: how many enforced levels were checked.
+    """
+    emp = np.sort(np.asarray(emp, dtype=float))
+    if len(emp) < 2:
+        raise ValueError("multiplicity_clusters_match needs at least 2 eigenvalues.")
+
+    nonzero = emp[emp > 1e-10]
+    if len(nonzero) == 0:
+        raise ValueError("All empirical eigenvalues are ~0; cannot normalise.")
+    lambda1 = nonzero[0]
+    emp_norm = emp / lambda1
+
+    theory_levels = np.asarray(theory_levels, dtype=float)
+    theory_mults = np.asarray(theory_mults, dtype=int)
+
+    nonzero_indices = [i for i, L in enumerate(theory_levels) if L > 1e-10]
+    enforced = nonzero_indices[:n_clusters]
+
+    per_cluster = []
+    for idx in enforced:
+        L = float(theory_levels[idx])
+        mult = int(theory_mults[idx])
+        window = max(eps, eps * abs(L))
+        count = int((np.abs(emp_norm - L) < window).sum())
+        per_cluster.append({
+            'idx': int(idx),
+            'level': L,
+            'theory_mult': mult,
+            'emp_count': count,
+            'match': count == mult,
+        })
+    all_match = bool(per_cluster) and all(c['match'] for c in per_cluster)
+    return {
+        'per_cluster': per_cluster,
+        'all_match': all_match,
+        'n_clusters_checked': len(per_cluster),
+    }
+
+
 def near_zero_count(emp: np.ndarray, threshold: float = 1e-4) -> int:
     """Count empirical eigenvalues below `threshold`. Approximates b_0 (number
     of connected components) of the underlying manifold.

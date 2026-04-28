@@ -21,8 +21,9 @@ from sklearn.base import BaseEstimator, ClusterMixin
 from sklearn.neighbors import NearestNeighbors
 
 
-# Hyperparameter sweep grid (spec section 4.1, lines 113-117)
-N_INTERVALS_GRID = [5, 8, 12, 18, 25]
+# Hyperparameter sweep grid (stage0_tuning.md §3.4 — extended to include
+# n_intervals=35 so the full 6×4=24 grid covers the regime needed at N=100k).
+N_INTERVALS_GRID = [5, 8, 12, 18, 25, 35]
 OVERLAP_GRID = [0.15, 0.25, 0.35, 0.50]
 
 
@@ -393,6 +394,58 @@ def stable_betti(sweep_results: dict) -> tuple[int, int, float]:
     return (best[0], best[1], best_count / len(sweep_results))
 
 
+def failure_mode_diagnostic(
+    sweep_results: dict,
+    expected_betti: tuple[int, int],
+) -> dict:
+    """Per stage0_tuning.md §4.1.3: configurations whose Betti is wrong should
+    fail in *interpretable* directions. b_1 should be monotone non-decreasing
+    in n_intervals at each fixed overlap (coarse covers miss cycles, fine
+    covers gain spurious ones from sampling noise).
+
+    Returns:
+        rows_monotone:    list of {overlap, b1_by_ni: list[int],
+                                   monotone_nondecreasing: bool} for each
+                                   overlap value.
+        all_rows_monotone: bool — True iff every fixed-overlap row's b_1 is
+                                  non-decreasing in n_intervals.
+        b1_expected:      expected b_1 (for context).
+
+    This is a qualitative warning, not a hard pass/fail; the spec says
+    "If failures are erratic — e.g., b_1=5 at coarse and b_1=0 at fine — the
+    pipeline is broken even when the stable region looks correct."
+    """
+    if not sweep_results:
+        return {'rows_monotone': [], 'all_rows_monotone': True,
+                'b1_expected': expected_betti[1]}
+    ni_values = sorted({k[0] for k in sweep_results})
+    ov_values = sorted({k[1] for k in sweep_results})
+
+    rows = []
+    all_mono = True
+    for ov in ov_values:
+        b1_row = []
+        for ni in ni_values:
+            entry = sweep_results.get((ni, ov))
+            if entry is None:
+                b1_row.append(None)
+            else:
+                b1_row.append(int(entry['b1']))
+        defined = [v for v in b1_row if v is not None]
+        mono = all(defined[i] <= defined[i + 1] for i in range(len(defined) - 1))
+        rows.append({
+            'overlap': float(ov),
+            'b1_by_ni': b1_row,
+            'monotone_nondecreasing': bool(mono),
+        })
+        all_mono = all_mono and mono
+    return {
+        'rows_monotone': rows,
+        'all_rows_monotone': bool(all_mono),
+        'b1_expected': int(expected_betti[1]),
+    }
+
+
 def correct_region(
     sweep_results: dict,
     expected_betti: tuple[int, int],
@@ -412,16 +465,25 @@ def correct_region(
         region_fraction:    region_size / total grid cells
         n_correct_total:    correct configs anywhere in the grid (modal-
                             style; reported alongside for diagnosis)
-        total_configs:      grid size (typically 20)
+        total_configs:      grid size (typically 24)
+        is_interior:        True iff the largest contiguous correct block
+                            does not touch any of the four grid edges
+                            (per stage0_tuning.md §3.4: a stable region at
+                            the grid boundary may extend further outside
+                            the swept range, indicating the grid is too
+                            narrow).
     """
     if not sweep_results:
         return {'region_size': 0, 'region_fraction': 0.0,
-                'n_correct_total': 0, 'total_configs': 0}
+                'n_correct_total': 0, 'total_configs': 0,
+                'is_interior': False}
 
     ni_values = sorted({k[0] for k in sweep_results})
     ov_values = sorted({k[1] for k in sweep_results})
     ni_idx = {v: i for i, v in enumerate(ni_values)}
     ov_idx = {v: i for i, v in enumerate(ov_values)}
+    ni_max_idx = len(ni_values) - 1
+    ov_max_idx = len(ov_values) - 1
 
     correct: set[tuple[int, int]] = set()
     for (ni, ov), v in sweep_results.items():
@@ -430,22 +492,31 @@ def correct_region(
 
     visited: set[tuple[int, int]] = set()
     best_size = 0
+    best_cells: set[tuple[int, int]] = set()
     for start in correct:
         if start in visited:
             continue
         size = 0
+        cells: set[tuple[int, int]] = set()
         stack = [start]
         while stack:
             cell = stack.pop()
             if cell in visited or cell not in correct:
                 continue
             visited.add(cell)
+            cells.add(cell)
             size += 1
             i, j = cell
             for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                 stack.append((i + di, j + dj))
         if size > best_size:
             best_size = size
+            best_cells = cells
+
+    is_interior = bool(best_cells) and not any(
+        i == 0 or i == ni_max_idx or j == 0 or j == ov_max_idx
+        for (i, j) in best_cells
+    )
 
     total = len(sweep_results)
     return {
@@ -453,4 +524,5 @@ def correct_region(
         'region_fraction': best_size / total,
         'n_correct_total': len(correct),
         'total_configs': total,
+        'is_interior': is_interior,
     }
