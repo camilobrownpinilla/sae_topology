@@ -18,6 +18,8 @@ from .reference import (
     S1_LEVELS, S1_MULTS, S1_RATIOS,
     T2_LEVELS, T2_MULTS, T2_RATIOS,
     S2_LEVELS, S2_MULTS, S2_RATIOS,
+    LINE_LEVELS, LINE_MULTS, LINE_RATIOS,
+    HELIX_LEVELS, HELIX_MULTS, HELIX_RATIOS,
     reference_ratios,
 )
 
@@ -37,5 +39,7 @@ __all__ = [
     "S1_LEVELS", "S1_MULTS", "S1_RATIOS",
     "T2_LEVELS", "T2_MULTS", "T2_RATIOS",
     "S2_LEVELS", "S2_MULTS", "S2_RATIOS",
+    "LINE_LEVELS", "LINE_MULTS", "LINE_RATIOS",
+    "HELIX_LEVELS", "HELIX_MULTS", "HELIX_RATIOS",
     "reference_ratios",
 ]

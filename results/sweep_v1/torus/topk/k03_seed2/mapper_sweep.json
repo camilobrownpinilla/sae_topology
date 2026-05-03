@@ -1,0 +1,412 @@
+{
+  "laplacian": [
+    {
+      "n_intervals": 5,
+      "overlap": 0.15,
+      "b0": 336,
+      "b1": 0,
+      "node_to_box": 11.945945945945946,
+      "n_nodes": 442,
+      "n_edges": 74,
+      "nerve_mismatch": {
+        "b0_obs": 336,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 335,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 5,
+      "overlap": 0.25,
+      "b0": 333,
+      "b1": 0,
+      "node_to_box": 26.229166666666668,
+      "n_nodes": 1259,
+      "n_edges": 954,
+      "nerve_mismatch": {
+        "b0_obs": 333,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 332,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 5,
+      "overlap": 0.35,
+      "b0": 332,
+      "b1": 0,
+      "node_to_box": 24.9,
+      "n_nodes": 1494,
+      "n_edges": 1559,
+      "nerve_mismatch": {
+        "b0_obs": 332,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 331,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 5,
+      "overlap": 0.5,
+      "b0": 330,
+      "b1": 0,
+      "node_to_box": 38.57746478873239,
+      "n_nodes": 5478,
+      "n_edges": 20883,
+      "nerve_mismatch": {
+        "b0_obs": 330,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 329,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 8,
+      "overlap": 0.15,
+      "b0": 337,
+      "b1": 0,
+      "node_to_box": 14.36734693877551,
+      "n_nodes": 704,
+      "n_edges": 251,
+      "nerve_mismatch": {
+        "b0_obs": 337,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 336,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 8,
+      "overlap": 0.25,
+      "b0": 335,
+      "b1": 0,
+      "node_to_box": 13.08860759493671,
+      "n_nodes": 1034,
+      "n_edges": 885,
+      "nerve_mismatch": {
+        "b0_obs": 335,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 334,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 8,
+      "overlap": 0.35,
+      "b0": 334,
+      "b1": 0,
+      "node_to_box": 43.23076923076923,
+      "n_nodes": 4496,
+      "n_edges": 15494,
+      "nerve_mismatch": {
+        "b0_obs": 334,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 333,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 8,
+      "overlap": 0.5,
+      "b0": 333,
+      "b1": 0,
+      "node_to_box": 23.40084388185654,
+      "n_nodes": 5546,
+      "n_edges": 21214,
+      "nerve_mismatch": {
+        "b0_obs": 333,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 332,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 12,
+      "overlap": 0.15,
+      "b0": 339,
+      "b1": 0,
+      "node_to_box": 7.5,
+      "n_nodes": 450,
+      "n_edges": 111,
+      "nerve_mismatch": {
+        "b0_obs": 339,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 338,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 12,
+      "overlap": 0.25,
+      "b0": 337,
+      "b1": 0,
+      "node_to_box": 6.076086956521739,
+      "n_nodes": 559,
+      "n_edges": 275,
+      "nerve_mismatch": {
+        "b0_obs": 337,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 336,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 12,
+      "overlap": 0.35,
+      "b0": 333,
+      "b1": 0,
+      "node_to_box": 5.839743589743589,
+      "n_nodes": 911,
+      "n_edges": 952,
+      "nerve_mismatch": {
+        "b0_obs": 333,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 332,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 12,
+      "overlap": 0.5,
+      "b0": 334,
+      "b1": 0,
+      "node_to_box": 16.332417582417584,
+      "n_nodes": 5945,
+      "n_edges": 23385,
+      "nerve_mismatch": {
+        "b0_obs": 334,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 333,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 18,
+      "overlap": 0.15,
+      "b0": 348,
+      "b1": 0,
+      "node_to_box": 9.129411764705882,
+      "n_nodes": 776,
+      "n_edges": 332,
+      "nerve_mismatch": {
+        "b0_obs": 348,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 347,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 18,
+      "overlap": 0.25,
+      "b0": 343,
+      "b1": 0,
+      "node_to_box": 7.664179104477612,
+      "n_nodes": 1027,
+      "n_edges": 872,
+      "nerve_mismatch": {
+        "b0_obs": 343,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 342,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 18,
+      "overlap": 0.35,
+      "b0": 340,
+      "b1": 0,
+      "node_to_box": 6.545871559633028,
+      "n_nodes": 1427,
+      "n_edges": 2012,
+      "nerve_mismatch": {
+        "b0_obs": 340,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 339,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 18,
+      "overlap": 0.5,
+      "b0": 334,
+      "b1": 0,
+      "node_to_box": 12.12877263581489,
+      "n_nodes": 6028,
+      "n_edges": 23838,
+      "nerve_mismatch": {
+        "b0_obs": 334,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 333,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 25,
+      "overlap": 0.15,
+      "b0": 352,
+      "b1": 0,
+      "node_to_box": 5.669014084507042,
+      "n_nodes": 805,
+      "n_edges": 400,
+      "nerve_mismatch": {
+        "b0_obs": 352,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 351,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 25,
+      "overlap": 0.25,
+      "b0": 348,
+      "b1": 0,
+      "node_to_box": 5.151960784313726,
+      "n_nodes": 1051,
+      "n_edges": 886,
+      "nerve_mismatch": {
+        "b0_obs": 348,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 347,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 25,
+      "overlap": 0.35,
+      "b0": 346,
+      "b1": 0,
+      "node_to_box": 5.498305084745763,
+      "n_nodes": 1622,
+      "n_edges": 2265,
+      "nerve_mismatch": {
+        "b0_obs": 346,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 345,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 25,
+      "overlap": 0.5,
+      "b0": 337,
+      "b1": 0,
+      "node_to_box": 8.623268698060942,
+      "n_nodes": 6226,
+      "n_edges": 24858,
+      "nerve_mismatch": {
+        "b0_obs": 337,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 336,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 35,
+      "overlap": 0.15,
+      "b0": 355,
+      "b1": 0,
+      "node_to_box": 5.098265895953757,
+      "n_nodes": 882,
+      "n_edges": 494,
+      "nerve_mismatch": {
+        "b0_obs": 355,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 354,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 35,
+      "overlap": 0.25,
+      "b0": 350,
+      "b1": 0,
+      "node_to_box": 5.864661654135339,
+      "n_nodes": 1560,
+      "n_edges": 1689,
+      "nerve_mismatch": {
+        "b0_obs": 350,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 349,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 35,
+      "overlap": 0.35,
+      "b0": 345,
+      "b1": 0,
+      "node_to_box": 6.064367816091954,
+      "n_nodes": 2638,
+      "n_edges": 5346,
+      "nerve_mismatch": {
+        "b0_obs": 345,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 344,
+        "mismatch_b1": -2
+      }
+    },
+    {
+      "n_intervals": 35,
+      "overlap": 0.5,
+      "b0": 340,
+      "b1": 0,
+      "node_to_box": 7.084142394822006,
+      "n_nodes": 6567,
+      "n_edges": 26536,
+      "nerve_mismatch": {
+        "b0_obs": 340,
+        "b1_obs": 0,
+        "b0_expected": 1,
+        "b1_expected": 2,
+        "mismatch_b0": 339,
+        "mismatch_b1": -2
+      }
+    }
+  ]
+}

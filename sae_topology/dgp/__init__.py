@@ -1,5 +1,5 @@
 from .base import TopologicalSpace
-from .spaces import Circle, Points, TwoCircles, FigureEight, Torus, Sphere, make_dgp
+from .spaces import Circle, Points, TwoCircles, FigureEight, Torus, Sphere, Helix, make_dgp
 
 __all__ = [
     "TopologicalSpace",
@@ -9,5 +9,6 @@ __all__ = [
     "FigureEight",
     "Torus",
     "Sphere",
+    "Helix",
     "make_dgp",
 ]

@@ -1,0 +1,30 @@
+# Stage 1 smoke test: ReLU+L1 on open helix, m=64, ambient D=64.
+# After Stage 0 validation passes on raw helix samples (line topology, Betti
+# (1, 0)), this trains an SAE on the same setup and verifies the Mapper +
+# spectral pipeline still recovers (1, 0) Betti and low log-ratio error on
+# the SAE post-activations.
+#
+# Helix is intrinsically 1-D and Riemannian-isometric to a line segment,
+# so the LB spectrum is [0, 1, 4, 9, ...] all multiplicity 1 - distinct
+# from S^1 (same levels, mults [1, 2, 2, ...]).
+topology: helix
+
+dgp:
+  d: 64
+  sigma: 0.01
+  radius: 1.0
+  pitch: 0.5
+  n_turns: 4.0
+
+sae:
+  arch: relu_l1
+  d_sae: 64
+  l1_coeff: 1.0e-3
+  lr: 4.0e-4
+  n_steps: 30000
+  batch_size: 256
+  seed: 0
+  resample_every: 2500
+  dead_threshold: 1.0e-3
+  n_eval_samples: 2000
+  pca_dim: 4            # unused by new pipeline; kept for config schema compat

@@ -244,12 +244,56 @@ class Sphere(TopologicalSpace):
         return coords, x3
 
 
+class Helix(TopologicalSpace):
+    """Open helix (1D, contractible) randomly oriented in R^d.  Expected: H_0=1, H_1=0.
+
+    Parametric map: t in [0, 2*pi*n_turns] ->
+        radius * cos(t) * u1 + radius * sin(t) * u2 + (pitch * t) * u3
+    where u1, u2, u3 are 3 mutually orthonormal vectors in R^d.
+
+    Constant-speed in t (ds/dt = sqrt(R^2 + c^2)), so uniform t is uniform
+    in arc length. Total arc length L = 2*pi*n_turns*sqrt(R^2 + c^2).
+
+    Riemannian-isometric to a line segment of length L; the LB spectrum
+    (Neumann BCs) is therefore lambda_n = (n*pi/L)^2, all multiplicity 1.
+    The normalized ratios are [0, 1, 4, 9, ...] = [n^2 for n in 0..]:
+    numerically the same as S^1 levels but with multiplicity 1 instead
+    of 2, which `multiplicity_check` distinguishes.
+
+    `sample_with_gt` returns the raw arc-length parameter s = sqrt(R^2 + c^2)*t
+    as gt_coords - shape (n, 1). Mapper covers the 1-D image with
+    axis-aligned intervals, which correctly resolves a contractible line.
+    """
+
+    def __init__(self, dimension: int, noise_level: float, center: np.ndarray,
+                 radius: float = 1.0, pitch: float = 0.5, n_turns: float = 4.0):
+        super().__init__(dimension, noise_level)
+        self.center = np.asarray(center, dtype=float)
+        self.radius = radius
+        self.pitch = pitch
+        self.n_turns = n_turns
+        self.t_max = 2 * np.pi * n_turns
+        self.u1, self.u2, self.u3 = _gram_schmidt_k(dimension, 3)
+
+    def sample(self, n: int) -> np.ndarray:
+        return self.sample_with_gt(n)[0]
+
+    def sample_with_gt(self, n: int) -> Tuple[np.ndarray, np.ndarray]:
+        t = np.random.uniform(0.0, self.t_max, n)
+        pts = (self.radius * np.outer(np.cos(t), self.u1)
+               + self.radius * np.outer(np.sin(t), self.u2)
+               + np.outer(self.pitch * t, self.u3))
+        coords = self.center + pts + np.random.randn(n, self.dimension) * self.noise_level
+        s = np.sqrt(self.radius * self.radius + self.pitch * self.pitch) * t
+        return coords, s.reshape(-1, 1)
+
+
 def make_dgp(topology: str, d: int, sigma: float, c0: np.ndarray,
              N: int = 0, **kwargs) -> TopologicalSpace:
     """Factory: return the TopologicalSpace for the requested topology.
 
     Args:
-        topology:  'points' | 'circle' | 'two_circles' | 'figure_eight' | 'torus' | 'sphere'
+        topology:  'points' | 'circle' | 'two_circles' | 'figure_eight' | 'torus' | 'sphere' | 'helix'
         d:         ambient dimension
         sigma:     noise level
         c0:        center array of shape (d,)
@@ -260,6 +304,7 @@ def make_dgp(topology: str, d: int, sigma: float, c0: np.ndarray,
             figure_eight — radius (float=1.0)
             torus        — major_radius (float=2.0), minor_radius (float=1.0)
             sphere       — radius (float=1.0)
+            helix        — radius (float=1.0), pitch (float=0.5), n_turns (float=4.0)
     """
     c0 = np.asarray(c0, dtype=float)
     if topology == 'points':
@@ -280,7 +325,12 @@ def make_dgp(topology: str, d: int, sigma: float, c0: np.ndarray,
                      minor_radius=kwargs.get('minor_radius', 1.0))
     if topology == 'sphere':
         return Sphere(d, sigma, c0, radius=kwargs.get('radius', 1.0))
+    if topology == 'helix':
+        return Helix(d, sigma, c0,
+                     radius=kwargs.get('radius', 1.0),
+                     pitch=kwargs.get('pitch', 0.5),
+                     n_turns=kwargs.get('n_turns', 4.0))
     raise ValueError(
         f"Unknown topology '{topology}'. "
-        "Choose from: 'points', 'circle', 'two_circles', 'figure_eight', 'torus', 'sphere'."
+        "Choose from: 'points', 'circle', 'two_circles', 'figure_eight', 'torus', 'sphere', 'helix'."
     )

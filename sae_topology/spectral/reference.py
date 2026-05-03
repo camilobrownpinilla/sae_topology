@@ -29,6 +29,7 @@ GROUND_TRUTH_BETTI: dict = {
     'figure_eight': {'H0': 1, 'H1': 2},
     'torus':        {'H0': 1, 'H1': 2, 'H2': 1},
     'sphere':       {'H0': 1, 'H1': 0, 'H2': 1},
+    'helix':        {'H0': 1, 'H1': 0},
 }
 
 
@@ -89,6 +90,30 @@ S2_RATIOS = np.repeat(S2_LEVELS, S2_MULTS)
 
 
 # ----------------------------------------------------------------------
+# Line segment with Neumann BC: lambda_n = (n*pi/L)^2, all multiplicity 1.
+# Normalized by lambda_1: levels = [0, 1, 4, 9, ...] = [n^2 for n in 0..].
+# Same numerical levels as S^1 but multiplicities all 1, not 2.
+# Used as the reference for the Helix DGP: the helix is Riemannian-isometric
+# to a line segment of arc length L = 2*pi*n_turns*sqrt(R^2 + c^2).
+# ----------------------------------------------------------------------
+
+def _line_spectrum(n_max: int = 20) -> tuple[np.ndarray, np.ndarray]:
+    """Levels and multiplicities for a line segment with Neumann BC."""
+    levels = np.array([n * n for n in range(n_max + 1)], dtype=float)
+    mults = np.ones(n_max + 1, dtype=int)
+    return levels, mults
+
+
+LINE_LEVELS, LINE_MULTS = _line_spectrum(n_max=20)
+LINE_RATIOS = np.repeat(LINE_LEVELS, LINE_MULTS)  # = LINE_LEVELS since all mult 1.
+
+# Helix is intrinsically a line; expose aliases for self-documenting downstream use.
+HELIX_LEVELS = LINE_LEVELS
+HELIX_MULTS = LINE_MULTS
+HELIX_RATIOS = LINE_RATIOS
+
+
+# ----------------------------------------------------------------------
 # Lookup helpers
 # ----------------------------------------------------------------------
 
@@ -98,6 +123,8 @@ REFERENCE_SPECTRA: dict = {
     'torus':  {'levels': T2_LEVELS, 'mults': T2_MULTS, 'ratios': T2_RATIOS,
                'gap_levels': [3, 6, 7, 11, 12, 14, 15]},
     'sphere': {'levels': S2_LEVELS, 'mults': S2_MULTS, 'ratios': S2_RATIOS,
+               'gap_levels': []},
+    'helix':  {'levels': LINE_LEVELS, 'mults': LINE_MULTS, 'ratios': LINE_RATIOS,
                'gap_levels': []},
 }
 

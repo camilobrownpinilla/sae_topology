@@ -207,7 +207,7 @@ def render_signoff_md(
     cb_failure = cb(r.failure_mode_diagnostic.get('all_rows_monotone', False)
                     if r.failure_mode_diagnostic else False)
 
-    expected_b0_map = {'circle': 1, 'torus': 1, 'sphere': 1, 'figure_eight': 1}
+    expected_b0_map = {'circle': 1, 'torus': 1, 'sphere': 1, 'figure_eight': 1, 'helix': 1}
 
     gt_region_str = (
         f"{r.mapper_gt_correct_region['region_fraction']*100:.0f}% "

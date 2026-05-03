@@ -57,6 +57,7 @@ from sae_topology.spectral import (
     log_ratio_error,
     multiplicity_clusters_match,
     near_zero_count,
+    first_nonzero_eigenvalue,
     REFERENCE_SPECTRA,
 )
 from sae_topology.experiments.stage0_validate import (
@@ -147,6 +148,8 @@ def _dgp_kwargs(topology: str) -> dict:
         return {'major_radius': 1.0, 'minor_radius': 1.0}
     if topology == 'sphere':
         return {'radius': 1.0}
+    if topology == 'helix':
+        return {'radius': 1.0, 'pitch': 0.5, 'n_turns': 4.0}
     return {}
 
 
@@ -184,7 +187,14 @@ def _build_stage1_result(
         except Exception:
             mult_check = None
 
-    nz = int(near_zero_count(eigenvalues))
+    # Adaptive threshold (0.1 * lambda_1) — matches stage0_validate.py.
+    # Hardcoded 1e-4 misclassifies the genuine lambda_1 as a zero on
+    # long manifolds (e.g. helix at L~28 has lambda_1 ~ 7e-5 < 1e-4).
+    lam1 = first_nonzero_eigenvalue(eigenvalues, zero_threshold=1e-8)
+    if lam1 is not None and lam1 > 0:
+        nz = int(near_zero_count(eigenvalues, threshold=0.1 * lam1))
+    else:
+        nz = int((np.asarray(eigenvalues, dtype=float) < 1e-8).sum())
     expected_b0 = expected[0] if expected is not None else 1
     nz_pass = (nz == expected_b0)
 
@@ -486,12 +496,20 @@ def run_stage1_bundle(
         )
 
     # Per-stable-config Mapper renderings: re-run Mapper on each stable cell
-    # to recover the graph object (mapper_sweep returns only diagnostics).
+    # to recover the graph object (mapper_sweep returns only diagnostics). When
+    # the run FAIL'd (no correct contiguous region), fall back to the modal
+    # Betti so we still get a visual diagnostic of what the run actually did.
     stable_cells = stable_configs_from_correct_region(sweep, expected)
     if stable_cells:
-        print(f"[stage1] rendering {len(stable_cells)} stable-config Mapper graphs...")
+        cells_to_render, render_subdir = stable_cells, 'stable_region_renderings'
+    else:
+        modal_b0, modal_b1, _ = stable_betti(sweep)
+        cells_to_render = stable_configs_from_correct_region(sweep, (modal_b0, modal_b1))
+        render_subdir = 'modal_renderings'
+    if cells_to_render:
+        print(f"[stage1] rendering {len(cells_to_render)} {render_subdir} Mapper graphs...")
         graph_by_cell: dict[tuple[int, float], dict] = {}
-        for (ni, ov) in stable_cells:
+        for (ni, ov) in cells_to_render:
             graph_by_cell[(int(ni), float(ov))] = run_mapper_once(
                 post, lens, int(ni), float(ov), distance_threshold=threshold,
             )
@@ -499,17 +517,22 @@ def run_stage1_bundle(
             graph_by_config=graph_by_cell,
             gt=(np.asarray(eval_gt) if eval_gt is not None else None),
             topology=topology,
-            stable_configs=stable_cells,
-            out_dir=figures_dir / 'stable_region_renderings',
+            stable_configs=cells_to_render,
+            out_dir=figures_dir / render_subdir,
         )
 
     # Training curves.
     try:
-        fig = plot_training_curves(
-            type('R', (), {'metrics': train_metrics, 'config': config})()
-        )
+        dummy = type('R', (), {
+            'metrics': train_metrics, 'config': config,
+            'topology': topology, 'arch': config.arch,
+            'd_sae': config.d_sae, 'seed': config.seed,
+        })()
+        fig = plot_training_curves(dummy)
         fig.savefig(figures_dir / 'training_curves.png',
                     dpi=150, bbox_inches='tight')
+        import matplotlib.pyplot as _plt
+        _plt.close(fig)
     except Exception as e:
         print(f"[stage1] training_curves render skipped: {e}")
 

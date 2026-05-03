@@ -1,0 +1,18 @@
+topology: torus 
+
+dgp:
+  d: 64
+  sigma: 0.01
+
+sae:
+  arch: relu_l1
+  d_sae: 128
+  l1_coeff: 1.0e-3      # tuned for D=64; old default 2e-2 was for D=8
+  lr: 4.0e-4
+  n_steps: 50000
+  batch_size: 256
+  seed: 0
+  resample_every: 2500
+  dead_threshold: 1.0e-3
+  n_eval_samples: 100000
+  pca_dim: 4            # unused by new pipeline; kept for config schema compat

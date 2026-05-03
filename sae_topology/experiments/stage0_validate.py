@@ -73,6 +73,7 @@ DEFAULT_SAMPLE_SIZES = {
     'sphere': 100_000,
     'torus':  100_000,
     'figure_eight': 100_000,
+    'helix':  100_000,
 }
 
 # Default topologies for the Stage 0 CLI: only the three smooth manifolds
@@ -85,14 +86,16 @@ DEFAULT_SIGMA_FACTOR_GRID = (0.5, 1.0, 2.0)
 
 # Filter dim per topology = multiplicity of the first non-trivial Laplace-
 # Beltrami eigenvalue (stage0_tuning.md §4.1):
-#   S^1 : λ_1 = 1  has mult 2 (cos θ, sin θ)
-#   T^2 : λ_1 = 1  has mult 4 (cos θ, sin θ, cos φ, sin φ)
-#   S^2 : λ_1 = 2  has mult 3 (degree-1 spherical harmonics: x, y, z)
+#   S^1   : λ_1 = 1  has mult 2 (cos θ, sin θ)
+#   T^2   : λ_1 = 1  has mult 4 (cos θ, sin θ, cos φ, sin φ)
+#   S^2   : λ_1 = 2  has mult 3 (degree-1 spherical harmonics: x, y, z)
+#   helix : λ_1 = (π/L)^2 has mult 1 (single cosine half-period; line topology)
 FILTER_K_BY_TOPOLOGY = {
     'circle': 2,
     'torus':  4,
     'sphere': 3,
     'figure_eight': 3,
+    'helix':  1,
 }
 
 # Expected Mapper Betti per manifold (Mapper sees the 1-skeleton + 2-cells,
@@ -102,10 +105,11 @@ EXPECTED_BETTI = {
     'torus':  (1, 2),
     'sphere': (1, 0),
     'figure_eight': (1, 2),
+    'helix':  (1, 0),
 }
 
 # Filters supported per topology (figure_eight has no closed-form GT).
-GT_FILTER_TOPOLOGIES = {'circle', 'torus', 'sphere'}
+GT_FILTER_TOPOLOGIES = {'circle', 'torus', 'sphere', 'helix'}
 
 # Inner-loop reduced grid (used for cheap scoring during auto-tune).
 INNER_NI_GRID = (5, 8, 12)
@@ -116,6 +120,8 @@ def _dgp_kwargs(topology: str) -> dict:
         return {'major_radius': 1.0, 'minor_radius': 1.0}
     if topology == 'sphere':
         return {'radius': 1.0}
+    if topology == 'helix':
+        return {'radius': 1.0, 'pitch': 0.5, 'n_turns': 4.0}
     return {}
 
 

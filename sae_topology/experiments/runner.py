@@ -57,6 +57,7 @@ EXPECTED_BETTI = {
     'torus':  (1, 2),
     'sphere': (1, 0),
     'figure_eight': (1, 2),
+    'helix':  (1, 0),
 }
 
 
@@ -99,10 +100,11 @@ FILTER_K_BY_TOPOLOGY: dict[str, int] = {
     'two_circles': 3,
     'figure_eight': 3,
     'points': 3,
+    'helix': 2,
 }
 
-GROUND_TRUTH_FILTER_OK = {'circle', 'torus', 'sphere'}
-SPECTRAL_REFERENCE_OK  = {'circle', 'torus', 'sphere'}
+GROUND_TRUTH_FILTER_OK = {'circle', 'torus', 'sphere', 'helix'}
+SPECTRAL_REFERENCE_OK  = {'circle', 'torus', 'sphere', 'helix'}
 
 
 @dataclass

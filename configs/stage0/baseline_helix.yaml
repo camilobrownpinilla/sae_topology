@@ -1,0 +1,49 @@
+_meta:
+  n_samples: 100000
+  ambient_d: 64
+  n_intervals_grid:
+  - 5
+  - 8
+  - 12
+  - 18
+  - 25
+  - 35
+  overlap_grid:
+  - 0.15
+  - 0.25
+  - 0.35
+  - 0.5
+  knn_k_grid:
+  - 15
+  - 25
+  - 40
+  sigma_factor_grid:
+  - 0.5
+  - 1.0
+  - 2.0
+  spectral_K: 25
+  multiplicity_eps: 0.05
+  multiplicity_n_clusters: 4
+  sigma_rule: median_heuristic
+  laplacian: coifman_lafon_alpha1
+  cluster_rule: single_linkage_global_5x_median_knn
+helix:
+  n_samples: 100000
+  ambient_d: 64
+  sigma_noise: 0.01
+  knn_k: 25
+  sigma_factor: 2.0
+  sigma_used: 0.19701264360548998
+  correct_region_fraction: 0.9583333333333334
+  correct_region_size: 23
+  mapper_interior_pass: false
+  spectral_log_ratio_error: 0.002478310365815052
+  mapper_laplacian_modal_betti:
+  - 1
+  - 0
+  multiplicity_pass: true
+  near_zero_pass: true
+  near_zero_count: 1
+  spectral_pass: true
+  mapper_pass: true
+  overall_pass: false

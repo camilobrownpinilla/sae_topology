@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Large activation / spectrum bundles — regenerable from training, too big for git
+*.npz
+*.npy
+
+# SLURM logs / outputs
+logs/
+*.out
+*.err
+
+# Jupyter
+.ipynb_checkpoints/

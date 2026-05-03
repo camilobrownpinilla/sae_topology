@@ -150,6 +150,11 @@ def _node_color_torus_phi(graph: dict, gt: np.ndarray) -> tuple[np.ndarray, str,
     return node_means(graph, phi), 'twilight', r'mean $\varphi$'
 
 
+def _node_color_helix(graph: dict, gt: np.ndarray) -> tuple[np.ndarray, str, str]:
+    s = gt[:, 0] if gt.ndim == 2 else gt
+    return node_means(graph, s), 'viridis', r'mean arc-length $s$'
+
+
 def _save_one(graph: dict, color, cmap: str, label: str, out_path: Path,
               title: str) -> None:
     if cmap == '':
@@ -209,6 +214,12 @@ def mapper_graph_renderings(
                 _save_one(graph, color, cmap, label, out_path,
                           title=f"{title_base}  ({label})")
                 written.append(out_path)
+        elif topology == 'helix' and gt is not None:
+            color, cmap, label = _node_color_helix(graph, gt)
+            out_path = out_dir / f"mapper_ni{ni:03d}_ov{int(ov*100):02d}.png"
+            _save_one(graph, color, cmap, label, out_path,
+                      title=f"{title_base}  ({label})")
+            written.append(out_path)
         else:
             # No GT: uniform color.
             out_path = out_dir / f"mapper_ni{ni:03d}_ov{int(ov*100):02d}.png"

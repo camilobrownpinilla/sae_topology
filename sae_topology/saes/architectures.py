@@ -126,18 +126,72 @@ class TopKSAE(nn.Module):
 
 
 # ─── JumpReLU ───────────────────────────────────────────────────────────────
+#
+# Verbatim port from SAELens
+# (https://github.com/jbloomAus/SAELens/blob/main/sae_lens/saes/jumprelu_sae.py),
+# DeepMind / Gemma-Scope formulation (Rajamanoharan et al. 2024). The rectangle
+# pseudo-derivative gives θ a bandwidth-windowed gradient from both the L0
+# surrogate (Step) and the reconstruction loss (JumpReLU.backward's
+# threshold_grad), preventing the runaway behaviour the previous hand-written
+# sigmoid-smooth-L0 implementation suffered from.
+
+
+def rectangle(x: torch.Tensor) -> torch.Tensor:
+    return ((x > -0.5) & (x < 0.5)).to(x)
+
+
+class Step(torch.autograd.Function):
+    @staticmethod
+    def forward(x, threshold, bandwidth):  # type: ignore[override]
+        return (x > threshold).to(x)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):  # type: ignore[override]
+        x, threshold, bandwidth = inputs
+        del output
+        ctx.save_for_backward(x, threshold)
+        ctx.bandwidth = bandwidth
+
+    @staticmethod
+    def backward(ctx, grad_output):  # type: ignore[override]
+        x, threshold = ctx.saved_tensors
+        bw = ctx.bandwidth
+        threshold_grad = torch.sum(
+            -(1.0 / bw) * rectangle((x - threshold) / bw) * grad_output, dim=0,
+        )
+        return None, threshold_grad, None
+
+
+class JumpReLU(torch.autograd.Function):
+    @staticmethod
+    def forward(x, threshold, bandwidth):  # type: ignore[override]
+        return (x * (x > threshold)).to(x)
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):  # type: ignore[override]
+        x, threshold, bandwidth = inputs
+        del output
+        ctx.save_for_backward(x, threshold)
+        ctx.bandwidth = bandwidth
+
+    @staticmethod
+    def backward(ctx, grad_output):  # type: ignore[override]
+        x, threshold = ctx.saved_tensors
+        bw = ctx.bandwidth
+        x_grad = (x > threshold) * grad_output
+        threshold_grad = torch.sum(
+            -(threshold / bw) * rectangle((x - threshold) / bw) * grad_output, dim=0,
+        )
+        return x_grad, threshold_grad, None
 
 
 class JumpReLUSAE(nn.Module):
     """JumpReLU sparse autoencoder with learnable per-feature thresholds.
 
-    Uses a smooth L0 approximation (SAELens V6 / Anthropic tanh variant) so
-    that the log-space threshold parameters receive gradients while the hard
-    step function is used in the forward pass for reconstruction.
-
-    Gradient split:
-      - MSE → updates W_enc, b_enc, W_dec, b_dec  (H treated as constant)
-      - smooth L0 → updates log_threshold         (pre_acts detached)
+    Encode/L0 use the SAELens autograd Functions above so that θ receives a
+    bandwidth-windowed gradient from both reconstruction (via JumpReLU) and
+    sparsity (via Step). MSE flows to W_enc/b_enc through JumpReLU.backward's
+    STE on x.
     """
 
     def __init__(
@@ -166,27 +220,20 @@ class JumpReLUSAE(nn.Module):
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         pre = x @ self.W_enc + self.b_enc
-        theta = self.log_threshold.exp().detach()    # hard gate, no grad to θ
-        return pre * (pre > theta).float()
+        threshold = self.log_threshold.exp()
+        return JumpReLU.apply(pre, threshold, self.bandwidth)
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         return z @ self.W_dec + self.b_dec
 
-    def _smooth_l0(self, pre_acts: torch.Tensor) -> torch.Tensor:
-        """Differentiable L0 approximation; gradient flows only to log_threshold."""
-        theta = self.log_threshold.exp()
-        return torch.sigmoid(
-            (pre_acts.detach() - theta) / self.bandwidth
-        ).sum(dim=-1).mean()
-
     def forward(self, x: torch.Tensor) -> dict:
-        pre   = x @ self.W_enc + self.b_enc
-        theta = self.log_threshold.exp().detach()
-        z     = pre * (pre > theta).float()
+        pre = x @ self.W_enc + self.b_enc
+        threshold = self.log_threshold.exp()
+        z = JumpReLU.apply(pre, threshold, self.bandwidth)
         x_hat = self.decode(z)
-        mse   = (x - x_hat).pow(2).mean()
-        l0    = self._smooth_l0(pre)
-        l1    = z.sum(dim=-1).mean()                 # reported for monitoring
+        mse = (x - x_hat).pow(2).mean()
+        l0 = Step.apply(pre, threshold, self.bandwidth).sum(dim=-1).mean()
+        l1 = z.sum(dim=-1).mean()
         return dict(pre=pre, recon=x_hat, codes=z, mse=mse, l0=l0, l1=l1)
 
     @torch.no_grad()

@@ -1,0 +1,19 @@
+topology: helix
+dgp:
+  d: 64
+  sigma: 0.01
+  radius: 1.0
+  pitch: 0.5
+  n_turns: 4.0
+sae:
+  d_sae: 128
+  lr: 0.0004
+  n_steps: 50000
+  batch_size: 256
+  resample_every: 2500
+  dead_threshold: 0.001
+  n_eval_samples: 100000
+  pca_dim: 4
+  arch: topk
+  seed: 0
+  k: 8

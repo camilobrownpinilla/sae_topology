@@ -242,6 +242,10 @@ def _node_color_for_topology(
         gt = np.asarray(gt_coords)
         rgb_pts = (gt + 1.0) / 2.0
         return node_means(graph, rgb_pts), '', r'RGB = (x, y, z)'
+    if topology == 'helix' and gt_coords is not None:
+        gt = np.asarray(gt_coords)
+        s = gt[:, 0] if gt.ndim == 2 else gt
+        return node_means(graph, s), 'viridis', r'arc-length $s$'
     if eval_inputs is not None:
         spec = coifman_lafon_spectrum(np.asarray(eval_inputs), knn_k=15, K=2)
         phi1 = pin_eigvec_sign(spec['eigenvectors'][:, 1])
@@ -283,7 +287,7 @@ def mapper_diagnostic_grid(
     topology = meta.get('topology', '?')
 
     k_filter = {'circle': 3, 'torus': 4, 'sphere': 4,
-                'figure_eight': 3}.get(topology, 3)
+                'figure_eight': 3, 'helix': 2}.get(topology, 3)
     spec = coifman_lafon_spectrum(post, knn_k=15, K=k_filter + 1)
     lens = laplacian_eigenvector_filter(post, k=k_filter, eigenvectors=spec['eigenvectors'])
     thresh = global_distance_threshold(post)
@@ -416,7 +420,7 @@ def main():
     topk_df = df[df['arch'] == 'topk']
     if not topk_df.empty:
         manifolds = args.topk_manifolds or sorted(topk_df['topology'].dropna().unique())
-        d_by_manifold = {'circle': 1, 'torus': 2, 'sphere': 2, 'figure_eight': 1}
+        d_by_manifold = {'circle': 1, 'torus': 2, 'sphere': 2, 'figure_eight': 1, 'helix': 1}
         for m in manifolds:
             fig = topk_phase_transition_figure(df, m, expected_d=d_by_manifold.get(m))
             fig.savefig(out_dir / f'topk_phase_{m}.png', dpi=150, bbox_inches='tight')

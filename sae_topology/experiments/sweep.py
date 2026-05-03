@@ -163,6 +163,8 @@ def main():
         dgp_params.update({'major_radius': 1.0, 'minor_radius': 1.0})
     elif args.manifold == 'sphere':
         dgp_params.update({'radius': 1.0})
+    elif args.manifold == 'helix':
+        dgp_params.update({'radius': 1.0, 'pitch': 0.5, 'n_turns': 4.0})
 
     print(f"TopK k sweep on {args.manifold}, K={K_values}, "
           f"n_seeds={args.n_seeds}, n_steps={args.n_steps}")

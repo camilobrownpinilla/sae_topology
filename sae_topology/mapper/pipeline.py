@@ -16,7 +16,7 @@ import networkx as nx
 import scipy.sparse as sp_sparse
 import kmapper as km
 from kmapper.cover import Cover
-from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.sparse.csgraph import connected_components
 from sklearn.base import BaseEstimator, ClusterMixin
 from sklearn.neighbors import NearestNeighbors
 
@@ -68,7 +68,22 @@ class FirstGapAgglomerative(ClusterMixin, BaseEstimator):
     cover box merge to one cluster; bridge edges between genuinely
     disconnected pieces (e.g. the two arcs at a figure-8 wedge if the
     cover doesn't separate them) exceed the threshold and split.
+
+    Implementation: single-linkage at threshold tau is equivalent to finding
+    connected components of the graph where edge (i, j) exists iff
+    d(x_i, x_j) <= tau. We build that graph via a kNN query (k_safe nearest
+    neighbors per point), filter edges by tau, and run csgraph.connected_components.
+    Memory is O(n * k_safe) instead of scipy.linkage's O(n**2), which matters
+    when a single Mapper cube absorbs most of the data (e.g. TopK at low k
+    collapses the lens, so one cube can hold ~94% of N=100k points).
     """
+
+    # k_safe must be large enough that every tau-neighbor of any point is among
+    # its k_safe nearest neighbors. For uniform sampling of a d-manifold the
+    # number of points within radius 5 * median_kNN scales as 5**d (5 for d=1,
+    # 25 for d=2). 50 leaves >=2x headroom on the d=2 manifolds (sphere, torus)
+    # used in this project; raise if d>=3 cases are ever added.
+    K_SAFE = 50
 
     def __init__(self, distance_threshold: float = 0.0):
         self.distance_threshold = distance_threshold
@@ -86,8 +101,20 @@ class FirstGapAgglomerative(ClusterMixin, BaseEstimator):
         if self.distance_threshold <= 0:
             self.labels_ = np.zeros(n, dtype=int)
             return self
-        Z = linkage(X, method='single')
-        self.labels_ = fcluster(Z, t=self.distance_threshold, criterion='distance').astype(int) - 1
+        k = min(self.K_SAFE, n - 1)
+        nn = NearestNeighbors(n_neighbors=k + 1)
+        nn.fit(X)
+        dists, idxs = nn.kneighbors(X)
+        dists = dists[:, 1:]
+        idxs = idxs[:, 1:]
+        mask = (dists <= self.distance_threshold).flatten()
+        rows = np.repeat(np.arange(n), k)[mask]
+        cols = idxs.flatten()[mask]
+        data = np.ones_like(rows, dtype=np.int8)
+        G = sp_sparse.coo_matrix((data, (rows, cols)), shape=(n, n))
+        G = G.maximum(G.T)
+        _, labels = connected_components(G, directed=False)
+        self.labels_ = labels.astype(int)
         return self
 
     def fit_predict(self, X, y=None):
@@ -267,6 +294,7 @@ EXPECTED_NERVE_BETTI = {
     'sphere': (1, 0),  # nerve of a triangulation of S^2 is a 2-sphere; only b_0, b_1 reportable on graphs.
     'figure_eight': (1, 2),
     'two_circles': (2, 2),
+    'helix':  (1, 0),
 }
 
 

@@ -1,0 +1,200 @@
+{
+  "topology": "circle",
+  "stage1_result": {
+    "topology": "circle",
+    "arch": "relu_l1",
+    "d_sae": 128,
+    "seed": 2,
+    "n_eval_samples": 100000,
+    "ambient_d": 64,
+    "sigma_noise": 0.01,
+    "knn_k": 40,
+    "sigma_factor": 1.0,
+    "sigma_used": 0.013634412411120414,
+    "spectral_log_ratio_error": 0.051689099993351646,
+    "spectral_eigenvalues": [
+      0.0,
+      9.930256538534239e-05,
+      0.00011373135664872403,
+      0.0004223620115263908,
+      0.00042898669041461764,
+      0.0009445501720788846,
+      0.0009664222355260215,
+      0.001665730904640548,
+      0.001719982350602223,
+      0.002588521341076325,
+      0.002682415406634567,
+      0.003754439806156236,
+      0.003806235830784074,
+      0.005118285669310401,
+      0.005122147324683644,
+      0.0066142687373785345,
+      0.0066760279246069485,
+      0.00830488729191965,
+      0.008415817976022037,
+      0.01013501009771506,
+      0.01038205063609971,
+      0.012202314754948523,
+      0.01247056166788916,
+      0.014453928167377008,
+      0.014695112765649422
+    ],
+    "mapper_laplacian_correct_region": {
+      "region_size": 2,
+      "region_fraction": 0.08333333333333333,
+      "n_correct_total": 3,
+      "total_configs": 24,
+      "is_interior": false
+    },
+    "mapper_laplacian_modal_betti": [
+      1,
+      1
+    ],
+    "spectral_pass": false,
+    "mapper_pass": false,
+    "multiplicity_pass": false,
+    "near_zero_pass": false,
+    "mapper_interior_pass": false,
+    "overall_pass": false,
+    "multiplicity_check": {
+      "per_cluster": [
+        {
+          "idx": 1,
+          "level": 1.0,
+          "theory_mult": 2,
+          "emp_count": 1,
+          "match": false
+        },
+        {
+          "idx": 2,
+          "level": 4.0,
+          "theory_mult": 2,
+          "emp_count": 0,
+          "match": false
+        },
+        {
+          "idx": 3,
+          "level": 9.0,
+          "theory_mult": 2,
+          "emp_count": 0,
+          "match": false
+        },
+        {
+          "idx": 4,
+          "level": 16.0,
+          "theory_mult": 2,
+          "emp_count": 1,
+          "match": false
+        }
+      ],
+      "all_match": false,
+      "n_clusters_checked": 4
+    },
+    "near_zero_count": 2,
+    "failure_mode_diagnostic": {
+      "rows_monotone": [
+        {
+          "overlap": 0.15,
+          "b1_by_ni": [
+            1,
+            3,
+            2,
+            9,
+            32,
+            49
+          ],
+          "monotone_nondecreasing": false
+        },
+        {
+          "overlap": 0.25,
+          "b1_by_ni": [
+            1,
+            1,
+            1,
+            2,
+            17,
+            25
+          ],
+          "monotone_nondecreasing": true
+        },
+        {
+          "overlap": 0.35,
+          "b1_by_ni": [
+            1,
+            1,
+            1,
+            3,
+            4,
+            15
+          ],
+          "monotone_nondecreasing": true
+        },
+        {
+          "overlap": 0.5,
+          "b1_by_ni": [
+            0,
+            1,
+            1,
+            1,
+            2,
+            4
+          ],
+          "monotone_nondecreasing": true
+        }
+      ],
+      "all_rows_monotone": false,
+      "b1_expected": 1
+    },
+    "final_mse": 0.0009453837992623448,
+    "final_mean_l0": 24.234375,
+    "final_n_dead": 30
+  },
+  "_meta": {
+    "config": {
+      "arch": "relu_l1",
+      "d_in": 64,
+      "d_sae": 128,
+      "l1_coeff": 0.003,
+      "k": 9,
+      "K_sweep": null,
+      "l0_coeff": 0.001,
+      "jumprelu_bandwidth": 0.05,
+      "jumprelu_init_threshold": 0.01,
+      "lr": 0.0004,
+      "n_steps": 50000,
+      "batch_size": 256,
+      "seed": 2,
+      "resample_every": 2500,
+      "dead_threshold": 0.001,
+      "pca_dim": 4,
+      "n_eval_samples": 100000
+    },
+    "dgp_params": {
+      "d": 64,
+      "sigma": 0.01
+    },
+    "baseline_used": true,
+    "baseline_path": "configs/stage0/baseline.yaml",
+    "spectral_K": 25,
+    "multiplicity_eps": 0.05,
+    "multiplicity_n_clusters": 4,
+    "log_ratio_threshold": 0.05,
+    "correct_region_threshold": 0.5,
+    "n_intervals_grid": [
+      5,
+      8,
+      12,
+      18,
+      25,
+      35
+    ],
+    "overlap_grid": [
+      0.15,
+      0.25,
+      0.35,
+      0.5
+    ],
+    "distance_threshold": 0.059696518610435005,
+    "k_filter": 2
+  }
+}
