@@ -14,3 +14,6 @@ logs/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Outer .md files
+/*.md
