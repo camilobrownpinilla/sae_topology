@@ -394,8 +394,8 @@ def plot_spectral_error_vs_sparsity(
         ``arch, mean_l0, mean_l0_std, n_seeds_diverged``.
     """
     arch_style = {
-        'relu_l1': dict(color='steelblue', label='ReLU+L1', marker='o'),
-        'topk':    dict(color='tomato',    label='TopK',    marker='s'),
+        'relu_l1': dict(color='magenta', label='ReLU+L1', marker='s'),
+        'topk':    dict(color='black',   label='TopK',    marker='s'),
     }
 
     has_diverged = bool(diverged_rows)
@@ -440,8 +440,8 @@ def plot_spectral_error_vs_sparsity(
             x = np.array([r['mean_l0'] for r in sub])
             y = np.ones_like(x)
             line, = ax_top.plot(
-                x, y, style['marker'],
-                color=style['color'], ms=8,
+                x, y, 'x',
+                color=style['color'], ms=10, mew=2.2,
                 label=style['label'] if arch not in legend_handles else None,
             )
             if arch not in legend_handles:
@@ -450,6 +450,13 @@ def plot_spectral_error_vs_sparsity(
         ax_top.set_yticks([1.0])
         ax_top.set_yticklabels([r'$\infty$'], fontsize=13)
         ax_top.set_ylim(0.55, 1.45)
+        ax_top.axhspan(0.55, 1.45, color='red', alpha=0.12, zorder=0)
+        ax_top.text(
+            0.5, 0.93,
+            'topology fractured (metric undefined)',
+            transform=ax_top.transAxes, ha='center', va='top',
+            fontsize=10, color='darkred', fontstyle='italic',
+        )
         # Hide spines between subplots and place break marks.
         ax_top.spines['bottom'].set_visible(False)
         ax_bot.spines['top'].set_visible(False)
