@@ -173,7 +173,9 @@ def laplacian_eigendecomposition(
     v0 = _deterministic_v0(N)
 
     try:
-        eigvals, eigvecs = spla.eigsh(L, k=K, which=which, v0=v0)
+        eigvals, eigvecs = spla.eigsh(
+            L, k=K, which=which, v0=v0, maxiter=50000, tol=1e-9,
+        )
     except spla.ArpackNoConvergence:
         try:
             eigvals, eigvecs = spla.eigsh(

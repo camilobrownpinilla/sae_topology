@@ -1,0 +1,7 @@
+idx	topology	arch	coeff	out_path
+0	circle	relu_l1	0.025	/n/holylabs/mweber_lab/Everyone/cbrownpinilla/sae_topology/results/calibration/circle_relu_l1_c2.5e-02_s0.json
+1	circle	relu_l1	0.0005	/n/holylabs/mweber_lab/Everyone/cbrownpinilla/sae_topology/results/calibration/circle_relu_l1_c5.0e-04_s0.json
+2	sphere	relu_l1	0.0005	/n/holylabs/mweber_lab/Everyone/cbrownpinilla/sae_topology/results/calibration/sphere_relu_l1_c5.0e-04_s0.json
+3	torus	jumprelu	0.0012	/n/holylabs/mweber_lab/Everyone/cbrownpinilla/sae_topology/results/calibration/torus_jumprelu_c1.2e-03_s0.json
+4	helix	jumprelu	0.4	/n/holylabs/mweber_lab/Everyone/cbrownpinilla/sae_topology/results/calibration/helix_jumprelu_c4.0e-01_s0.json
+5	helix	jumprelu	0.6	/n/holylabs/mweber_lab/Everyone/cbrownpinilla/sae_topology/results/calibration/helix_jumprelu_c6.0e-01_s0.json
