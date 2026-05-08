@@ -1,4 +1,5 @@
 """Plotting helpers for the Mapper + Laplace-Beltrami pipeline."""
+
 from __future__ import annotations
 
 from typing import Iterable, Optional
@@ -12,42 +13,58 @@ from sklearn.decomposition import PCA
 # ─── DGP sanity check ──────────────────────────────────────────────────────
 
 
-def plot_dgp_samples(topologies: list, make_dgp_fn, d: int = 64,
-                     sigma: float = 0.01, N: int = 500,
-                     seed: int = 42, pca_dim: int = 2) -> plt.Figure:
+def plot_dgp_samples(
+    topologies: list,
+    make_dgp_fn,
+    d: int = 64,
+    sigma: float = 0.01,
+    N: int = 500,
+    seed: int = 42,
+    pca_dim: int = 2,
+) -> plt.Figure:
     """PCA projections of point clouds for each topology."""
     np.random.seed(seed)
     c0 = np.zeros(d)
     label_map = {
-        'points': 'Points', 'circle': 'Circle', 'two_circles': 'Two Circles',
-        'figure_eight': 'Figure 8', 'torus': 'Torus', 'sphere': 'Sphere',
-        'helix': 'Open Helix',
+        "points": "Points",
+        "circle": "Circle",
+        "two_circles": "Two Circles",
+        "figure_eight": "Figure 8",
+        "torus": "Torus",
+        "sphere": "Sphere",
+        "helix": "Open Helix",
     }
     if pca_dim == 3:
-        fig, axes = plt.subplots(1, len(topologies),
-                                 figsize=(4 * len(topologies), 4),
-                                 subplot_kw={'projection': '3d'})
+        fig, axes = plt.subplots(
+            1,
+            len(topologies),
+            figsize=(4 * len(topologies), 4),
+            subplot_kw={"projection": "3d"},
+        )
     else:
-        fig, axes = plt.subplots(1, len(topologies),
-                                 figsize=(4 * len(topologies), 4))
+        fig, axes = plt.subplots(1, len(topologies), figsize=(4 * len(topologies), 4))
     if len(topologies) == 1:
         axes = [axes]
 
     for ax, topo in zip(axes, topologies):
         kw = {}
-        if topo == 'torus':
-            kw = {'major_radius': 1.0, 'minor_radius': 1.0}
+        if topo == "torus":
+            kw = {"major_radius": 1.0, "minor_radius": 1.0}
         X = make_dgp_fn(topo, d, sigma, c0, **kw).sample(N)
         Xp = PCA(n_components=pca_dim).fit_transform(X)
         if pca_dim == 3:
             ax.scatter(Xp[:, 0], Xp[:, 1], Xp[:, 2], s=4, alpha=0.6)
-            ax.set_xlabel('PC1'); ax.set_ylabel('PC2'); ax.set_zlabel('PC3')
+            ax.set_xlabel("PC1")
+            ax.set_ylabel("PC2")
+            ax.set_zlabel("PC3")
         else:
             ax.scatter(Xp[:, 0], Xp[:, 1], s=4, alpha=0.6)
-            ax.set_xlabel('PC1'); ax.set_ylabel('PC2'); ax.set_aspect('equal')
+            ax.set_xlabel("PC1")
+            ax.set_ylabel("PC2")
+            ax.set_aspect("equal")
         ax.set_title(label_map.get(topo, topo))
 
-    fig.suptitle(f'DGP Sanity Check — {pca_dim}D PCA Projections', fontsize=13)
+    fig.suptitle(f"DGP Sanity Check — {pca_dim}D PCA Projections", fontsize=13)
     fig.tight_layout()
     return fig
 
@@ -56,21 +73,24 @@ def plot_dgp_samples(topologies: list, make_dgp_fn, d: int = 64,
 
 
 _LABEL_MAP = {
-    'circle': 'Circle', 'torus': 'Torus', 'sphere': 'Sphere',
-    'helix': 'Open Helix', 'figure_eight': 'Figure 8',
-    'two_circles': 'Two Circles',
+    "circle": "Circle",
+    "torus": "Torus",
+    "sphere": "Sphere",
+    "helix": "Open Helix",
+    "figure_eight": "Figure 8",
+    "two_circles": "Two Circles",
 }
 
 # Per-topology, per-coord cyclic flag. Cyclic coords get a cyclic colormap
 # (twilight) so the wrap-around isn't visualised as a discontinuity; linear
 # coords get viridis.
 _CYCLIC_BY_TOPOLOGY = {
-    'circle': [True],
-    'helix': [False],
-    'torus': [True, True],          # both angles wrap
-    'sphere': [False, True],        # polar in [0, π] linear, azimuthal cyclic
-    'figure_eight': [False],
-    'two_circles': [False],
+    "circle": [True],
+    "helix": [False],
+    "torus": [True, True],  # both angles wrap
+    "sphere": [False, True],  # polar in [0, π] linear, azimuthal cyclic
+    "figure_eight": [False],
+    "two_circles": [False],
 }
 
 
@@ -87,7 +107,8 @@ def _scatter_with_floor(
     shadow projection. Shared between `plot_pca_comparison` and
     `plot_pca_sparsity_grid` so visual style stays consistent.
     """
-    zmin = float(Xp[:, 2].min()); zmax = float(Xp[:, 2].max())
+    zmin = float(Xp[:, 2].min())
+    zmax = float(Xp[:, 2].max())
     zspan = max(zmax - zmin, 1e-6)
     zfloor = zmin - 0.15 * zspan
 
@@ -100,18 +121,42 @@ def _scatter_with_floor(
         np.linspace(ymin - ypad, ymax + ypad, 2),
     )
     zz = np.full_like(xx, zfloor)
-    ax.plot_surface(xx, yy, zz, color='lightgray', alpha=0.22,
-                    linewidth=0, antialiased=True, shade=False, zorder=0)
+    ax.plot_surface(
+        xx,
+        yy,
+        zz,
+        color="lightgray",
+        alpha=0.22,
+        linewidth=0,
+        antialiased=True,
+        shade=False,
+        zorder=0,
+    )
     # Soft shadow just above the plane.
-    ax.scatter(Xp[:, 0], Xp[:, 1],
-               np.full(Xp.shape[0], zfloor + 0.005 * zspan),
-               c='gray', s=max(point_size * 0.5, 3),
-               alpha=0.07, linewidths=0,
-               depthshade=False, zorder=1)
+    ax.scatter(
+        Xp[:, 0],
+        Xp[:, 1],
+        np.full(Xp.shape[0], zfloor + 0.005 * zspan),
+        c="gray",
+        s=max(point_size * 0.5, 3),
+        alpha=0.07,
+        linewidths=0,
+        depthshade=False,
+        zorder=1,
+    )
     # Floating cloud.
-    ax.scatter(Xp[:, 0], Xp[:, 1], Xp[:, 2],
-               c=color_values, s=point_size, alpha=alpha,
-               cmap=cmap, linewidths=0, depthshade=True, zorder=2)
+    ax.scatter(
+        Xp[:, 0],
+        Xp[:, 1],
+        Xp[:, 2],
+        c=color_values,
+        s=point_size,
+        alpha=alpha,
+        cmap=cmap,
+        linewidths=0,
+        depthshade=True,
+        zorder=2,
+    )
 
 
 def _extract_intrinsic_coords(gt: np.ndarray, topology: str) -> np.ndarray:
@@ -122,20 +167,20 @@ def _extract_intrinsic_coords(gt: np.ndarray, topology: str) -> np.ndarray:
     intrinsic parameter so a cyclic colormap maps cleanly across the
     manifold without the cos/sin redundancy.
     """
-    if topology == 'circle':
+    if topology == "circle":
         # gt = (cos θ, sin θ)
         return np.arctan2(gt[:, 1], gt[:, 0])[:, None]
-    if topology == 'torus':
+    if topology == "torus":
         # gt = (cos θ, sin θ, cos φ, sin φ)
         theta = np.arctan2(gt[:, 1], gt[:, 0])
         phi = np.arctan2(gt[:, 3], gt[:, 2])
         return np.column_stack([theta, phi])
-    if topology == 'sphere':
+    if topology == "sphere":
         # gt = (x, y, z) on S^2
         polar = np.arccos(np.clip(gt[:, 2], -1.0, 1.0))
         azim = np.arctan2(gt[:, 1], gt[:, 0])
         return np.column_stack([polar, azim])
-    if topology == 'helix':
+    if topology == "helix":
         return gt if gt.ndim == 2 else gt[:, None]
     return gt if gt.ndim == 2 else gt[:, None]
 
@@ -164,21 +209,28 @@ def plot_pca_comparison(
     pca_in = PCA(n_components=3).fit_transform(eval_X)
     pca_out = PCA(n_components=3).fit_transform(post)
 
-    fig, axes = plt.subplots(n_coords, 2, figsize=(11, 5.0 * n_coords),
-                             subplot_kw={'projection': '3d'}, squeeze=False)
+    fig, axes = plt.subplots(
+        n_coords,
+        2,
+        figsize=(11, 5.0 * n_coords),
+        subplot_kw={"projection": "3d"},
+        squeeze=False,
+    )
     for c in range(n_coords):
-        cmap = 'twilight' if cyclic_flags[c] else 'viridis'
-        for col, (Xp, label) in enumerate([(pca_in, 'true samples'),
-                                            (pca_out, 'post-activations')]):
+        cmap = "twilight" if cyclic_flags[c] else "viridis"
+        for col, (Xp, label) in enumerate(
+            [(pca_in, "true samples"), (pca_out, "post-activations")]
+        ):
             ax = axes[c, col]
-            _scatter_with_floor(ax, Xp, coords[:, c], cmap,
-                                point_size=11, alpha=0.5)
-            ax.set_xlabel('PC1'); ax.set_ylabel('PC2'); ax.set_zlabel('PC3')
-            coord_lbl = f' · gt[{c}]' if n_coords > 1 else ''
-            ax.set_title(f'{label}{coord_lbl}')
+            _scatter_with_floor(ax, Xp, coords[:, c], cmap, point_size=11, alpha=0.5)
+            ax.set_xlabel("PC1")
+            ax.set_ylabel("PC2")
+            ax.set_zlabel("PC3")
+            coord_lbl = f" · gt[{c}]" if n_coords > 1 else ""
+            ax.set_title(f"{label}{coord_lbl}")
     fig.suptitle(
-        f'{_LABEL_MAP.get(topology, topology)} — PCA of true samples '
-        f'vs SAE post-activations',
+        f"{_LABEL_MAP.get(topology, topology)} — PCA of true samples "
+        f"vs SAE post-activations",
         fontsize=13,
     )
     fig.tight_layout()
@@ -213,35 +265,38 @@ def plot_pca_sparsity_grid(
         cyclic_flags += [False] * (n_coords - len(cyclic_flags))
 
     n_cols = 1 + len(posts)
-    fig, axes = plt.subplots(n_coords, n_cols,
-                             figsize=(3.6 * n_cols, 4.0 * n_coords),
-                             subplot_kw={'projection': '3d'}, squeeze=False)
+    fig, axes = plt.subplots(
+        n_coords,
+        n_cols,
+        figsize=(3.6 * n_cols, 4.0 * n_coords),
+        subplot_kw={"projection": "3d"},
+        squeeze=False,
+    )
 
     pca_in = PCA(n_components=3).fit_transform(eval_X)
     pca_posts = [PCA(n_components=3).fit_transform(p) for p, _, _ in posts]
 
     for c in range(n_coords):
-        cmap = 'twilight' if cyclic_flags[c] else 'viridis'
+        cmap = "twilight" if cyclic_flags[c] else "viridis"
         for col_idx in range(n_cols):
             ax = axes[c, col_idx]
             if col_idx == 0:
                 Xp = pca_in
-                title = 'true samples'
+                title = "true samples"
             else:
                 Xp = pca_posts[col_idx - 1]
                 _, lbl, l0 = posts[col_idx - 1]
-                title = f'{lbl}  (L0={l0:.1f})'
-            _scatter_with_floor(ax, Xp, coords[:, c], cmap,
-                                point_size=8, alpha=0.45)
-            ax.set_xlabel('PC1', labelpad=-2)
-            ax.set_ylabel('PC2', labelpad=-2)
-            ax.set_zlabel('PC3', labelpad=-2)
-            ax.tick_params(axis='both', which='major', labelsize=7)
-            coord_lbl = f' · gt[{c}]' if n_coords > 1 else ''
-            ax.set_title(f'{title}{coord_lbl}', fontsize=9)
+                title = f"{lbl}  (L0={l0:.1f})"
+            _scatter_with_floor(ax, Xp, coords[:, c], cmap, point_size=8, alpha=0.45)
+            ax.set_xlabel("PC1", labelpad=-2)
+            ax.set_ylabel("PC2", labelpad=-2)
+            ax.set_zlabel("PC3", labelpad=-2)
+            ax.tick_params(axis="both", which="major", labelsize=7)
+            coord_lbl = f" · gt[{c}]" if n_coords > 1 else ""
+            ax.set_title(f"{title}{coord_lbl}", fontsize=9)
     fig.suptitle(
-        f'{_LABEL_MAP.get(topology, topology)} — PCA along sparsity sweep '
-        f'(left → right = increasing sparsity)',
+        f"{_LABEL_MAP.get(topology, topology)} — PCA along sparsity sweep "
+        f"(left → right = increasing sparsity)",
         fontsize=12,
     )
     fig.tight_layout()
@@ -252,8 +307,8 @@ def plot_pca_sparsity_grid(
 
 
 _PARAM_LABEL = {
-    'circle': r'$\theta$ (radians)',
-    'helix':  'arc length  $s$',
+    "circle": r"$\theta$ (radians)",
+    "helix": "arc length  $s$",
 }
 
 
@@ -271,9 +326,10 @@ def plot_feature_tuning_curves(
     Each feature is rendered as a faint raw scatter + a bold moving-average
     line. Smoothing window is ``smooth_frac * N`` samples.
     """
-    if topology not in ('circle', 'helix'):
+    if topology not in ("circle", "helix"):
         raise ValueError(
-            f"tuning curves only defined for 1-D manifolds; got {topology}")
+            f"tuning curves only defined for 1-D manifolds; got {topology}"
+        )
     coords = _extract_intrinsic_coords(gt, topology)
     param = coords[:, 0]
     order = np.argsort(param)
@@ -284,7 +340,7 @@ def plot_feature_tuning_curves(
     top_features = np.argsort(feat_sum)[-top_n:][::-1]
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    cmap = plt.colormaps.get_cmap('tab10')
+    cmap = plt.colormaps.get_cmap("tab10")
     win = max(int(smooth_frac * len(param_s)), 1)
     kernel = np.ones(win) / win
     for i, fid in enumerate(top_features):
@@ -293,17 +349,15 @@ def plot_feature_tuning_curves(
         # Faint raw trace.
         ax.plot(param_s, y, lw=0.4, alpha=0.18, color=color)
         # Bold smoothed trace.
-        y_smooth = np.convolve(y, kernel, mode='same')
-        ax.plot(param_s, y_smooth, lw=2.2, color=color,
-                label=f'feat #{int(fid)}')
+        y_smooth = np.convolve(y, kernel, mode="same")
+        ax.plot(param_s, y_smooth, lw=2.2, color=color, label=f"feat #{int(fid)}")
 
-    ax.set_xlabel(_PARAM_LABEL.get(topology, 'GT parameter'))
-    ax.set_ylabel('Feature activation')
+    ax.set_xlabel(_PARAM_LABEL.get(topology, "GT parameter"))
+    ax.set_ylabel("Feature activation")
     ax.set_title(
-        f'{_LABEL_MAP.get(topology, topology)} — top {top_n} feature '
-        f'tuning curves'
+        f"{_LABEL_MAP.get(topology, topology)} — top {top_n} feature tuning curves"
     )
-    ax.legend(loc='upper right', fontsize=8, ncol=2, framealpha=0.9)
+    ax.legend(loc="upper right", fontsize=8, ncol=2, framealpha=0.9)
     ax.grid(alpha=0.3)
     fig.tight_layout()
     return fig
@@ -337,31 +391,33 @@ def plot_receptive_fields(
 
     n_cols = min(top_n, 3)
     n_rows = (top_n + n_cols - 1) // n_cols
-    fig, axes = plt.subplots(n_rows, n_cols,
-                             figsize=(4.6 * n_cols, 4.4 * n_rows),
-                             subplot_kw={'projection': '3d'}, squeeze=False)
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(4.6 * n_cols, 4.4 * n_rows),
+        subplot_kw={"projection": "3d"},
+        squeeze=False,
+    )
     for i, fid in enumerate(top_features):
         ax = axes[i // n_cols, i % n_cols]
         activation = post[:, fid]
-        _scatter_with_floor(ax, pca_in, activation, 'magma',
-                            point_size=8, alpha=0.55)
-        ax.set_xlabel('PC1', labelpad=-2)
-        ax.set_ylabel('PC2', labelpad=-2)
-        ax.set_zlabel('PC3', labelpad=-2)
-        ax.tick_params(axis='both', which='major', labelsize=7)
+        _scatter_with_floor(ax, pca_in, activation, "magma", point_size=8, alpha=0.55)
+        ax.set_xlabel("PC1", labelpad=-2)
+        ax.set_ylabel("PC2", labelpad=-2)
+        ax.set_zlabel("PC3", labelpad=-2)
+        ax.tick_params(axis="both", which="major", labelsize=7)
         max_act = float(activation.max())
         n_active = int((activation > 0).sum())
         ax.set_title(
-            f'feat #{int(fid)}  (max={max_act:.2f}, '
-            f'{n_active/len(activation):.1%} active)',
+            f"feat #{int(fid)}  (max={max_act:.2f}, "
+            f"{n_active / len(activation):.1%} active)",
             fontsize=9,
         )
     # Blank any unused panels.
     for j in range(top_n, n_rows * n_cols):
-        axes[j // n_cols, j % n_cols].axis('off')
+        axes[j // n_cols, j % n_cols].axis("off")
     fig.suptitle(
-        f'{_LABEL_MAP.get(topology, topology)} — top {top_n} feature '
-        f'receptive fields',
+        f"{_LABEL_MAP.get(topology, topology)} — top {top_n} feature receptive fields",
         fontsize=12,
     )
     fig.tight_layout()
@@ -394,15 +450,18 @@ def plot_spectral_error_vs_sparsity(
         ``arch, mean_l0, mean_l0_std, n_seeds_diverged``.
     """
     arch_style = {
-        'relu_l1': dict(color='magenta', label='ReLU+L1', marker='s'),
-        'topk':    dict(color='black',   label='TopK',    marker='s'),
+        "relu_l1": dict(color="magenta", label="ReLU+L1", marker="s"),
+        "topk": dict(color="black", label="TopK", marker="s"),
+        "jumprelu": dict(color="orange", label="JumpReLU", marker="s"),
     }
 
     has_diverged = bool(diverged_rows)
     if has_diverged:
         fig, (ax_top, ax_bot) = plt.subplots(
-            2, 1, sharex=True,
-            gridspec_kw={'height_ratios': [1, 6], 'hspace': 0.05},
+            2,
+            1,
+            sharex=True,
+            gridspec_kw={"height_ratios": [1, 6], "hspace": 0.05},
             figsize=(7.8, 5.4),
         )
     else:
@@ -413,72 +472,113 @@ def plot_spectral_error_vs_sparsity(
 
     # Bottom panel — finite values: mean line + shaded ±σ error band.
     for arch, style in arch_style.items():
-        sub = sorted([r for r in finite_rows if r['arch'] == arch],
-                     key=lambda r: r['mean_l0'])
+        sub = sorted(
+            [r for r in finite_rows if r["arch"] == arch], key=lambda r: r["mean_l0"]
+        )
         if not sub:
             continue
-        x = np.array([r['mean_l0'] for r in sub])
-        y = np.array([r['E_mean'] for r in sub])
-        yerr = np.array([r['E_std'] for r in sub])
-        # Clip lower band so log-y doesn't blow up on near-zero values.
-        y_lo = np.maximum(y - yerr, np.finfo(float).tiny)
+        x = np.array([r["mean_l0"] for r in sub])
+        y = np.array([r["E_mean"] for r in sub])
+        yerr = np.array([r["E_std"] for r in sub])
+        # Clip lower band to one decade below mean — without this, yerr > y
+        # cases (high seed-variance cells) push y - yerr into floating-point
+        # underflow territory, dragging the autoscaled log-y axis down to
+        # ~1e-300.
+        y_lo = np.maximum(y - yerr, y * 0.1)
         y_hi = y + yerr
-        ax_bot.fill_between(x, y_lo, y_hi, color=style['color'],
-                            alpha=0.20, linewidth=0)
-        line, = ax_bot.plot(x, y, style['marker'] + '-',
-                            color=style['color'], lw=2, ms=6,
-                            label=style['label'])
+        ax_bot.fill_between(
+            x, y_lo, y_hi, color=style["color"], alpha=0.20, linewidth=0
+        )
+        (line,) = ax_bot.plot(
+            x,
+            y,
+            style["marker"] + "-",
+            color=style["color"],
+            lw=2,
+            ms=6,
+            label=style["label"],
+        )
         legend_handles[arch] = line
 
     # Top panel — diverged cells at "∞".
     if ax_top is not None:
         for arch, style in arch_style.items():
-            sub = sorted([r for r in diverged_rows if r['arch'] == arch],
-                         key=lambda r: r['mean_l0'])
+            sub = sorted(
+                [r for r in diverged_rows if r["arch"] == arch],
+                key=lambda r: r["mean_l0"],
+            )
             if not sub:
                 continue
-            x = np.array([r['mean_l0'] for r in sub])
+            x = np.array([r["mean_l0"] for r in sub])
             y = np.ones_like(x)
-            line, = ax_top.plot(
-                x, y, 'x',
-                color=style['color'], ms=10, mew=2.2,
-                label=style['label'] if arch not in legend_handles else None,
+            (line,) = ax_top.plot(
+                x,
+                y,
+                "x",
+                color=style["color"],
+                ms=10,
+                mew=2.2,
+                label=style["label"] if arch not in legend_handles else None,
             )
             if arch not in legend_handles:
                 legend_handles[arch] = line
 
         ax_top.set_yticks([1.0])
-        ax_top.set_yticklabels([r'$\infty$'], fontsize=13)
+        ax_top.set_yticklabels([r"$\infty$"], fontsize=13)
         ax_top.set_ylim(0.55, 1.45)
-        ax_top.axhspan(0.55, 1.45, color='red', alpha=0.12, zorder=0)
+        ax_top.axhspan(0.55, 1.45, color="red", alpha=0.12, zorder=0)
         ax_top.text(
-            0.5, 0.93,
-            'topology fractured (metric undefined)',
-            transform=ax_top.transAxes, ha='center', va='top',
-            fontsize=10, color='darkred', fontstyle='italic',
+            0.5,
+            0.93,
+            "topology fractured (metric undefined)",
+            transform=ax_top.transAxes,
+            ha="center",
+            va="top",
+            fontsize=10,
+            color="darkred",
+            fontstyle="italic",
         )
         # Hide spines between subplots and place break marks.
-        ax_top.spines['bottom'].set_visible(False)
-        ax_bot.spines['top'].set_visible(False)
-        ax_top.tick_params(axis='x', which='both', bottom=False,
-                           labelbottom=False)
+        ax_top.spines["bottom"].set_visible(False)
+        ax_bot.spines["top"].set_visible(False)
+        ax_top.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
         d = 0.5
-        break_kwargs = dict(marker=[(-1, -d), (1, d)], markersize=10,
-                            linestyle='none', color='k', mec='k', mew=1,
-                            clip_on=False)
-        ax_top.plot([0, 1], [0, 0], transform=ax_top.transAxes,
-                    **break_kwargs)
-        ax_bot.plot([0, 1], [1, 1], transform=ax_bot.transAxes,
-                    **break_kwargs)
-        ax_top.grid(axis='x', alpha=0.3)
+        break_kwargs = dict(
+            marker=[(-1, -d), (1, d)],
+            markersize=10,
+            linestyle="none",
+            color="k",
+            mec="k",
+            mew=1,
+            clip_on=False,
+        )
+        ax_top.plot([0, 1], [0, 0], transform=ax_top.transAxes, **break_kwargs)
+        ax_bot.plot([0, 1], [1, 1], transform=ax_bot.transAxes, **break_kwargs)
+        ax_top.grid(axis="x", alpha=0.3)
 
-    ax_bot.set_xlabel('Mean L0 (per-sample active features)')
-    ax_bot.set_ylabel(r'Spectral log-ratio error  $\mathcal{E}$')
-    ax_bot.set_xscale('log')
-    ax_bot.set_yscale('log')
-    ax_bot.grid(alpha=0.3, which='both')
-    title = (f'{_LABEL_MAP.get(topology, topology)} — '
-             f'spectral error vs sparsity')
+    ax_bot.set_xlabel("Mean L0 (per-sample active features)")
+    ax_bot.set_ylabel(r"Spectral log-ratio error  $\mathcal{E}$")
+    ax_bot.set_xscale("log")
+    ax_bot.set_yscale("log")
+    # Shade E <= 0.05 green ("almost isometric recovery"), mirroring the red
+    # ∞ band in the top panel. Use the post-autoscale ylim so the band
+    # extends from the visible bottom up to 0.05.
+    _y_lo, _y_hi = ax_bot.get_ylim()
+    ax_bot.axhspan(_y_lo, 0.05, color="green", alpha=0.12, zorder=0)
+    ax_bot.set_ylim(_y_lo, _y_hi)
+    ax_bot.text(
+        0.5,
+        0.03,
+        "almost isometric recovery",
+        transform=ax_bot.transAxes,
+        ha="center",
+        va="bottom",
+        fontsize=10,
+        color="darkgreen",
+        fontstyle="italic",
+    )
+    ax_bot.grid(alpha=0.3, which="both")
+    title = f"{_LABEL_MAP.get(topology, topology)} — spectral error vs sparsity"
     if ax_top is not None:
         ax_top.set_title(title)
     else:
@@ -491,9 +591,86 @@ def plot_spectral_error_vs_sparsity(
         seen = set(labels)
         for h, l in zip(h2, l2):
             if l not in seen:
-                handles.append(h); labels.append(l); seen.add(l)
+                handles.append(h)
+                labels.append(l)
+                seen.add(l)
     if handles:
-        ax_bot.legend(handles, labels, loc='best')
+        ax_bot.legend(handles, labels, loc="best")
+    fig.tight_layout()
+    return fig
+
+
+# ─── Topological stability bar plot ────────────────────────────────────────
+
+
+def plot_tau_bar(
+    rows: list,
+    title_suffix: str = "",
+) -> plt.Figure:
+    """Bar plot of τ = (# Mapper-grid cells with correct Betti) / total cells.
+
+    Grouped by manifold along x; one bar per architecture per manifold.
+    Bar colors match `plot_spectral_error_vs_sparsity` (magenta / black /
+    orange) drawn as transparent fills with bold colored edges + matching
+    error bars.
+
+    Parameters
+    ----------
+    rows : list of dict
+        Each entry: ``{manifold, arch, tau_mean, tau_std, n_seeds}``.
+        Missing (manifold, arch) combinations are silently dropped.
+    title_suffix : str
+        Trailing text for the title (e.g., 'at L0 ≈ 32').
+    """
+    manifolds = ["circle", "torus", "sphere", "helix"]
+    archs = ["relu_l1", "topk", "jumprelu"]
+    arch_color = {"relu_l1": "magenta", "topk": "black", "jumprelu": "orange"}
+    arch_label = {"relu_l1": "ReLU+L1", "topk": "TopK", "jumprelu": "JumpReLU"}
+
+    fig, ax = plt.subplots(figsize=(8.4, 5.0))
+    n_archs = len(archs)
+    bar_w = 0.26
+    x = np.arange(len(manifolds))
+
+    for i, arch in enumerate(archs):
+        means, stds = [], []
+        for m in manifolds:
+            entry = next(
+                (r for r in rows if r["manifold"] == m and r["arch"] == arch),
+                None,
+            )
+            if entry is None:
+                means.append(np.nan)
+                stds.append(0.0)
+            else:
+                means.append(entry["tau_mean"])
+                stds.append(entry["tau_std"])
+        offset = (i - (n_archs - 1) / 2) * bar_w
+        ax.bar(
+            x + offset,
+            means,
+            bar_w,
+            yerr=stds,
+            capsize=4,
+            edgecolor=arch_color[arch],
+            facecolor=arch_color[arch],
+            linewidth=2.2,
+            label=arch_label[arch],
+            error_kw=dict(ecolor=arch_color[arch], lw=1.5, capthick=1.5),
+            alpha=0.35,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([_LABEL_MAP.get(m, m) for m in manifolds])
+    ax.set_ylabel(r"$\tau$  (fraction of Mapper grid with correct Betti)")
+    ax.set_ylim(0.0, 1.05)
+    title = r"Topological stability $\tau$ per architecture"
+    if title_suffix:
+        title = f"{title} — {title_suffix}"
+    ax.set_title(title)
+    ax.axhline(1.0, color="grey", lw=0.5, alpha=0.6)
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(loc="best", frameon=True)
     fig.tight_layout()
     return fig
 
@@ -504,35 +681,38 @@ def plot_spectral_error_vs_sparsity(
 def plot_training_curves(result) -> plt.Figure:
     """3-panel diagnostic from an ExperimentResult: MSE, mean L0, dead atoms."""
     m = result.metrics
-    if not m.get('step'):
+    if not m.get("step"):
         raise ValueError("ExperimentResult has no training metrics (skip_training?)")
-    steps   = np.array(m['step'])
-    mse     = np.array(m['mse'])
-    mean_l0 = np.array(m['mean_l0'])
-    n_dead  = np.array(m['n_dead'])
+    steps = np.array(m["step"])
+    mse = np.array(m["mse"])
+    mean_l0 = np.array(m["mean_l0"])
+    n_dead = np.array(m["n_dead"])
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.5))
     re = result.config.resample_every
     resample_steps = steps[steps % re == 0][1:]
     for ax in axes:
         for rs in resample_steps:
-            ax.axvline(rs, color='gray', linestyle=':', lw=0.8, alpha=0.6)
+            ax.axvline(rs, color="gray", linestyle=":", lw=0.8, alpha=0.6)
 
-    axes[0].plot(steps, mse, lw=1.5, color='steelblue')
-    axes[0].set_xlabel('Step'); axes[0].set_ylabel('MSE')
-    axes[0].set_title('Reconstruction MSE')
+    axes[0].plot(steps, mse, lw=1.5, color="steelblue")
+    axes[0].set_xlabel("Step")
+    axes[0].set_ylabel("MSE")
+    axes[0].set_title("Reconstruction MSE")
 
-    axes[1].plot(steps, mean_l0, lw=1.5, color='tomato')
-    axes[1].set_xlabel('Step'); axes[1].set_ylabel('Mean L0')
-    axes[1].set_title('Sparsity (mean active features)')
+    axes[1].plot(steps, mean_l0, lw=1.5, color="tomato")
+    axes[1].set_xlabel("Step")
+    axes[1].set_ylabel("Mean L0")
+    axes[1].set_title("Sparsity (mean active features)")
 
-    axes[2].plot(steps, n_dead, lw=1.5, color='mediumseagreen')
-    axes[2].set_xlabel('Step'); axes[2].set_ylabel('# Dead atoms')
-    axes[2].set_title('Dead atoms')
+    axes[2].plot(steps, n_dead, lw=1.5, color="mediumseagreen")
+    axes[2].set_xlabel("Step")
+    axes[2].set_ylabel("# Dead atoms")
+    axes[2].set_title("Dead atoms")
 
     fig.suptitle(
-        f'Training — {result.topology} / {result.arch}, '
-        f'm={result.d_sae}, seed={result.seed}',
+        f"Training — {result.topology} / {result.arch}, "
+        f"m={result.d_sae}, seed={result.seed}",
         fontsize=12,
     )
     fig.tight_layout()
@@ -545,7 +725,7 @@ def plot_training_curves(result) -> plt.Figure:
 def plot_mapper_graph(
     graph: dict,
     node_color: Optional[np.ndarray] = None,
-    cmap: str = 'viridis',
+    cmap: str = "viridis",
     ax: Optional[plt.Axes] = None,
     title: Optional[str] = None,
     layout_seed: int = 0,
@@ -567,8 +747,8 @@ def plot_mapper_graph(
     Order matches `graph['nodes'].keys()` iteration order.
     """
     G = nx.Graph()
-    G.add_nodes_from(graph['nodes'].keys())
-    for nid, nbrs in graph.get('links', {}).items():
+    G.add_nodes_from(graph["nodes"].keys())
+    for nid, nbrs in graph.get("links", {}).items():
         for nb in nbrs:
             G.add_edge(nid, nb)
 
@@ -578,29 +758,48 @@ def plot_mapper_graph(
 
     pos = nx.spring_layout(G, seed=layout_seed)
 
-    sizes = [20 + 4 * len(graph['nodes'][nid]) for nid in G.nodes()]
+    sizes = [20 + 4 * len(graph["nodes"][nid]) for nid in G.nodes()]
     nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.4, width=0.7)
 
     if node_color is None:
         nx.draw_networkx_nodes(
-            G, pos, ax=ax, node_color='lightsteelblue', node_size=sizes,
-            edgecolors='k', linewidths=0.3,
+            G,
+            pos,
+            ax=ax,
+            node_color="lightsteelblue",
+            node_size=sizes,
+            edgecolors="k",
+            linewidths=0.3,
         )
     else:
         node_color = np.asarray(node_color)
         if node_color.ndim == 2 and node_color.shape[1] == 3:
             colors = np.clip(node_color, 0.0, 1.0)
             nx.draw_networkx_nodes(
-                G, pos, ax=ax, node_color=list(colors), node_size=sizes,
-                edgecolors='k', linewidths=0.3,
+                G,
+                pos,
+                ax=ax,
+                node_color=list(colors),
+                node_size=sizes,
+                edgecolors="k",
+                linewidths=0.3,
             )
         else:
             valid = ~np.isnan(node_color)
-            color_arr = np.where(valid, node_color, np.nanmean(node_color) if valid.any() else 0.0)
+            color_arr = np.where(
+                valid, node_color, np.nanmean(node_color) if valid.any() else 0.0
+            )
             nodes_pc = nx.draw_networkx_nodes(
-                G, pos, ax=ax, node_color=color_arr, node_size=sizes,
-                cmap=cmap, edgecolors='k', linewidths=0.3,
-                vmin=vmin, vmax=vmax,
+                G,
+                pos,
+                ax=ax,
+                node_color=color_arr,
+                node_size=sizes,
+                cmap=cmap,
+                edgecolors="k",
+                linewidths=0.3,
+                vmin=vmin,
+                vmax=vmax,
             )
             if colorbar and fig is not None:
                 fig.colorbar(nodes_pc, ax=ax, fraction=0.04, pad=0.02)
@@ -619,7 +818,7 @@ def plot_mapper_graph(
 def plot_spectrum_vs_theory(
     emp_eigs: np.ndarray,
     theory_ratios: Iterable[float],
-    title: str = '',
+    title: str = "",
     K: int = 20,
 ) -> plt.Figure:
     """Empirical eigenvalue ratios vs. closed-form Laplace-Beltrami ratios.
@@ -642,13 +841,24 @@ def plot_spectrum_vs_theory(
     fig, ax = plt.subplots(figsize=(6, 4))
     emp_idx = np.arange(len(emp_ratio))
     theory_idx = np.arange(len(theory_norm))
-    ax.plot(emp_idx, np.maximum(emp_ratio, 1e-10), 'o-', label='empirical', color='steelblue')
-    ax.plot(theory_idx, np.maximum(theory_norm, 1e-10), 's--',
-            label='theory (Laplace-Beltrami)', color='firebrick')
-    ax.set_yscale('log')
-    ax.set_xlabel('Eigenvalue index $i$')
-    ax.set_ylabel(r'$\lambda_i / \lambda_1$')
-    ax.set_title(title or 'Empirical vs. closed-form spectrum')
+    ax.plot(
+        emp_idx,
+        np.maximum(emp_ratio, 1e-10),
+        "o-",
+        label="empirical",
+        color="steelblue",
+    )
+    ax.plot(
+        theory_idx,
+        np.maximum(theory_norm, 1e-10),
+        "s--",
+        label="theory (Laplace-Beltrami)",
+        color="firebrick",
+    )
+    ax.set_yscale("log")
+    ax.set_xlabel("Eigenvalue index $i$")
+    ax.set_ylabel(r"$\lambda_i / \lambda_1$")
+    ax.set_title(title or "Empirical vs. closed-form spectrum")
     ax.legend()
     ax.grid(alpha=0.3)
     fig.tight_layout()
@@ -662,22 +872,26 @@ def plot_topk_phase_transition(
     K_values: list[int],
     recovery_metric: list[float],
     expected_threshold: int | None = None,
-    metric_name: str = 'log-ratio error',
-    title: str = '',
+    metric_name: str = "log-ratio error",
+    title: str = "",
 ) -> plt.Figure:
     """Plot a recovery score (e.g. log-ratio error or correct-Betti fraction)
     vs. TopK k. If `expected_threshold` is given (e.g. d+1 per H1), draw a
     vertical line marking the predicted phase transition.
     """
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(K_values, recovery_metric, 'o-', color='steelblue')
+    ax.plot(K_values, recovery_metric, "o-", color="steelblue")
     if expected_threshold is not None:
-        ax.axvline(expected_threshold, ls='--', color='firebrick',
-                   label=f'predicted transition K={expected_threshold}')
+        ax.axvline(
+            expected_threshold,
+            ls="--",
+            color="firebrick",
+            label=f"predicted transition K={expected_threshold}",
+        )
         ax.legend()
-    ax.set_xlabel('TopK $k$')
+    ax.set_xlabel("TopK $k$")
     ax.set_ylabel(metric_name)
-    ax.set_title(title or 'TopK phase-transition sweep')
+    ax.set_title(title or "TopK phase-transition sweep")
     ax.grid(alpha=0.3)
     fig.tight_layout()
     return fig

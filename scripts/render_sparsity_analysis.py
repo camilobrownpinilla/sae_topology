@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -177,10 +178,19 @@ def main() -> None:
     spec_dir.mkdir(parents=True, exist_ok=True)
 
     cells = []
-    for d in sorted({p.parent for p in results_root.rglob('report.json')}):
+    seen_dirs: set = set()
+    for root, _, files in os.walk(results_root, followlinks=True):
+        if 'report.json' not in files:
+            continue
+        d = Path(root)
+        key = str(d.resolve())
+        if key in seen_dirs:
+            continue
+        seen_dirs.add(key)
         info = _load_cell(d)
         if info is not None:
             cells.append(info)
+    cells.sort(key=lambda c: c['run_dir'])
     print(f"loaded {len(cells)} cells with valid metrics")
 
     print("[render_sparsity_analysis] sparsity-ordered PCA grids:")
